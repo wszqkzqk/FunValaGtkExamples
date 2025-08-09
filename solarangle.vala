@@ -14,7 +14,7 @@ public class SolarAngleApp : Adw.Application {
     private const double DEG2RAD = Math.PI / 180.0;
     private const double RAD2DEG = 180.0 / Math.PI;
     private const int RESOLUTION_PER_MIN = 1440; // 1 sample per minute
-    // Constants for margins in the drawing area
+    // Constants for drawing area
     private const int MARGIN_LEFT = 70;
     private const int MARGIN_RIGHT = 20;
     private const int MARGIN_TOP = 50;
@@ -357,96 +357,94 @@ public class SolarAngleApp : Adw.Application {
      }
 
     /**
-     * Asynchronously gets current location using IP geolocation service.
+     * Asynchronously gets current location using IP geolocation service with timeout.
      */
     private async void get_location_async () throws IOError {
-        // Use ipapi.co which provides free IP geolocation
         var file = File.new_for_uri ("https://ipapi.co/json/");
+        var cancellable = new Cancellable ();
+
+        // Set up a 5-second timeout
+        Timeout.add_seconds (5, () => {
+            cancellable.cancel ();
+            return false;
+        });
 
         try {
-            var stream = yield file.read_async (Priority.DEFAULT, null);
-            var data_stream = new DataInputStream (stream);
-
-            // Read the entire response
-            var response_text = new StringBuilder ();
-            string? line = null;
-
-            while ((line = yield data_stream.read_line_async (Priority.DEFAULT, null)) != null) {
-                response_text.append (line);
-            }
-
-            stream.close ();
-            data_stream.close ();
-
-            if (response_text.len == 0) {
-                throw new IOError.FAILED ("Empty response from location service");
-            }
-
-            parse_location_response (response_text.str);
-            
-        } catch (Error e) {
-            throw new IOError.FAILED ("Failed to get location: %s".printf (e.message));
-        }
-    }
-
-    /**
-     * Parses the JSON response from the location service.
-     * 
-     * @param json_text The JSON response as string.
-     */
-    private void parse_location_response (string json_text) throws IOError {
-        try {
+            var stream = yield file.read_async (Priority.DEFAULT, cancellable);
             var parser = new Json.Parser ();
-            parser.load_from_data (json_text);
+            yield parser.load_from_stream_async (stream, cancellable);
 
             var root_object = parser.get_root ().get_object ();
-
-            // Check if the response contains an error
-            if (root_object.has_member ("error") && root_object.get_boolean_member ("error")) {
-                var reason = root_object.has_member ("reason") ? 
-                    root_object.get_string_member ("reason") : "Unknown error";
-                throw new IOError.FAILED ("Location service error: %s".printf (reason));
+            if (root_object.get_boolean_member_with_default ("error", false)) {
+                throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
             }
 
-            // Extract location data
-            double parsed_lat = 0.0;
-            double parsed_lon = 0.0;
-
             if (root_object.has_member ("latitude")) {
-                parsed_lat = root_object.get_double_member ("latitude");
+                latitude = root_object.get_double_member ("latitude");
             } else {
                 throw new IOError.FAILED ("No latitude found in response");
             }
 
             if (root_object.has_member ("longitude")) {
-                parsed_lon = root_object.get_double_member ("longitude");
+                longitude = root_object.get_double_member ("longitude");
             } else {
                 throw new IOError.FAILED ("No longitude found in response");
             }
 
+            double network_tz_offset = 0.0;
+            bool has_network_tz = false;
+
+            if (root_object.has_member ("utc_offset")) {
+                var offset_str = root_object.get_string_member ("utc_offset");
+                network_tz_offset = double.parse (offset_str) / 100.0;
+                has_network_tz = true;
+            }
+
+            // Get local system's current timezone offset
             var timezone = new TimeZone.local ();
             var time_interval = timezone.find_interval (GLib.TimeType.UNIVERSAL, selected_date.to_unix ());
-            timezone_offset_hours = timezone.get_offset (time_interval) / 3600.0;
+            var local_tz_offset = timezone.get_offset (time_interval) / 3600.0;
 
-            // Update UI in main thread
+            const double TZ_EPSILON = 0.01; // Epsilon for floating point comparison
+            if (has_network_tz && (!(-TZ_EPSILON < (network_tz_offset - local_tz_offset) < TZ_EPSILON))) {
+                const string RESPONSE_NETWORK = "network"; // ID for network timezone
+                const string RESPONSE_LOCAL = "local"; // ID for local timezone
+
+                // Timezones differ, prompt user for a choice
+                var dialog = new Adw.AlertDialog (
+                    "Timezone Mismatch",
+                    "The timezone from the network (UTC%+.2f) differs from your system's timezone (UTC%+.2f).\n\nWhich one would you like to use?".printf (
+                        network_tz_offset,
+                        local_tz_offset
+                    )
+                );
+                dialog.add_response (RESPONSE_NETWORK, "Use Network Timezone");
+                dialog.add_response (RESPONSE_LOCAL, "Use System Timezone");
+                dialog.default_response = RESPONSE_NETWORK;
+
+                // Asynchronously wait for the user's choice
+                string choice = yield dialog.choose (window, null);
+
+                if (choice == RESPONSE_NETWORK) {
+                    timezone_offset_hours = network_tz_offset;
+                } else {
+                    timezone_offset_hours = local_tz_offset;
+                }
+            } else {
+                // Network's timezone is the same as local's or unavailable
+                timezone_offset_hours = local_tz_offset;
+            }
+
             Idle.add (() => {
-                latitude = parsed_lat;
-                longitude = parsed_lon;
-
-                // Update the spin rows
                 latitude_row.value = latitude;
                 longitude_row.value = longitude;
                 timezone_row.value = timezone_offset_hours;
-
-                // Update plot
                 update_plot_data ();
                 drawing_area.queue_draw ();
-
                 return false;
             });
-
         } catch (Error e) {
-            throw new IOError.FAILED ("Failed to parse location data: %s".printf (e.message));
+            throw new IOError.FAILED ("Failed to get location: %s", e.message);
         }
     }
 
@@ -510,8 +508,11 @@ public class SolarAngleApp : Adw.Application {
             // cos(phi): cosine of zenith angle via spherical trig
             double cos_phi = sin_lat * Math.sin (decl_rad) + cos_lat * Math.cos (decl_rad) * Math.cos (ha_rad);
             // clamp to valid range
-            if (cos_phi > 1.0) cos_phi = 1.0;
-            if (cos_phi < -1.0) cos_phi = -1.0;
+            if (cos_phi > 1.0) {
+                cos_phi = 1.0;
+            } else if (cos_phi < -1.0) {
+                cos_phi = -1.0;
+            }
             // Zenith angle phi (rad)
             double phi_rad = Math.acos (cos_phi);
 
@@ -767,6 +768,7 @@ public class SolarAngleApp : Adw.Application {
                     export_chart (file);
                 }
             } catch (Error e) {
+                // Dismissed by user, so do not show alert dialog
                 message ("Image file has not been saved: %s", e.message);
             }
         });
@@ -838,6 +840,7 @@ public class SolarAngleApp : Adw.Application {
                     export_csv_data (file);
                 }
             } catch (Error e) {
+                // Dismissed by user, so do not show alert dialog
                 message ("CSV file has not been saved: %s", e.message);
             }
         });
