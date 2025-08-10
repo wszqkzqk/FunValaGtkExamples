@@ -709,19 +709,11 @@ public class SolarAngleApp : Gtk.Application {
                 throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
             }
 
-            double parsed_lat = 0.0;
-            double parsed_lon = 0.0;
-
-            if (root_object.has_member ("latitude")) {
-                parsed_lat = root_object.get_double_member ("latitude");
+            if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
+                latitude = root_object.get_double_member ("latitude");
+                longitude = root_object.get_double_member ("longitude");
             } else {
-                throw new IOError.FAILED ("No latitude in response data");
-            }
-
-            if (root_object.has_member ("longitude")) {
-                parsed_lon = root_object.get_double_member ("longitude");
-            } else {
-                throw new IOError.FAILED ("No longitude in response data");
+                throw new IOError.FAILED ("No coordinates found in the response");
             }
 
             double network_tz_offset = 0.0;
@@ -763,8 +755,6 @@ public class SolarAngleApp : Gtk.Application {
 
             // Update UI on the main thread
             Idle.add (() => {
-                latitude = parsed_lat;
-                longitude = parsed_lon;
                 latitude_spin.value = latitude;
                 longitude_spin.value = longitude;
                 timezone_spin.value = timezone_offset_hours;

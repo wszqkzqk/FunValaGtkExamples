@@ -379,16 +379,11 @@ public class SolarAngleApp : Adw.Application {
                 throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
             }
 
-            if (root_object.has_member ("latitude")) {
+            if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
                 latitude = root_object.get_double_member ("latitude");
-            } else {
-                throw new IOError.FAILED ("No latitude found in response");
-            }
-
-            if (root_object.has_member ("longitude")) {
                 longitude = root_object.get_double_member ("longitude");
             } else {
-                throw new IOError.FAILED ("No longitude found in response");
+                throw new IOError.FAILED ("No coordinates found in the response");
             }
 
             double network_tz_offset = 0.0;
