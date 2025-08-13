@@ -430,7 +430,7 @@ public class SolarAngleApp : Gtk.Application {
         }
 
         // Plot solar elevation curve
-        cr.set_source_rgb (1, 0, 0);
+        cr.set_source_rgb (1, 0.5, 0);
         cr.set_line_width (2);
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
             double x = MARGIN_LEFT + chart_width * (i / (double) (RESOLUTION_PER_MIN - 1));

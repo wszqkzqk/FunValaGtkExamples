@@ -66,7 +66,7 @@ public class SolarAngleApp : Adw.Application {
         grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Gray grid
         axis_r: 0.0, axis_g: 0.0, axis_b: 0.0,              // Black axes
         text_r: 0.0, text_g: 0.0, text_b: 0.0,              // Black text
-        curve_r: 1.0, curve_g: 0.0, curve_b: 0.0,           // Red curve
+        curve_r: 1.0, curve_g: 0.5, curve_b: 0.0,           // Red curve
         shade_r: 0.7, shade_g: 0.7, shade_b: 0.7, shade_a: 0.3, // Light gray shade
         point_r: 0.0, point_g: 0.0, point_b: 1.0,           // Blue point
         line_r: 0.0, line_g: 0.0, line_b: 1.0, line_a: 0.5  // Blue guide lines
@@ -78,7 +78,7 @@ public class SolarAngleApp : Adw.Application {
         grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Light gray grid
         axis_r: 1.0, axis_g: 1.0, axis_b: 1.0,              // White axes
         text_r: 1.0, text_g: 1.0, text_b: 1.0,              // White text
-        curve_r: 1.0, curve_g: 0.0, curve_b: 0.0,           // Bright red curve
+        curve_r: 1.0, curve_g: 0.5, curve_b: 0.0,           // Bright red curve
         shade_r: 0.3, shade_g: 0.3, shade_b: 0.3, shade_a: 0.7, // Dark gray shade
         point_r: 0.3, point_g: 0.7, point_b: 1.0,           // Light blue point
         line_r: 0.3, line_g: 0.7, line_b: 1.0, line_a: 0.7  // Light blue guide lines
