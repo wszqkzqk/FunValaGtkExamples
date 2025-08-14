@@ -1,4 +1,4 @@
-#!/usr/bin/env -S vala --pkg=gtk4 -X -lm -X -O2 -X -march=native -X -pipe
+#!/usr/bin/env -S vala --pkg=gtk4 --pkg=json-glib-1.0 -X -lm -X -O2 -X -march=native -X -pipe
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 /**
@@ -31,6 +31,14 @@ public class SolarAngleApp : Gtk.Application {
     private double clicked_time_hours = 0.0;
     private double corresponding_angle = 0.0;
     private bool has_click_point = false;
+
+    // Controls related to automatic location detection
+    private Gtk.Stack location_stack;
+    private Gtk.Spinner location_spinner;
+    private Gtk.Button location_button;
+    private Gtk.SpinButton latitude_spin;
+    private Gtk.SpinButton longitude_spin;
+    private Gtk.SpinButton timezone_spin;
 
     /**
      * Creates a new SolarAngleApp instance.
@@ -66,12 +74,33 @@ public class SolarAngleApp : Gtk.Application {
             margin_bottom = 10,
         };
 
+        // --- Location auto-detect controls ---
+        var location_detect_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+        location_stack = new Gtk.Stack () {
+            hhomogeneous = true,
+            vhomogeneous = true,
+            transition_type = Gtk.StackTransitionType.CROSSFADE,
+        };
+        location_spinner = new Gtk.Spinner ();
+        // Use a standard GTK text button for location detection
+        location_button = new Gtk.Button.with_label ("Detect Location / Timezone") {
+            tooltip_text = "Automatically detect current location and timezone",
+            hexpand = true,
+        };
+        location_button.clicked.connect (on_auto_detect_location);
+        location_stack.add_child (location_button);
+        location_stack.add_child (location_spinner);
+        location_stack.visible_child = location_button;
+        location_detect_box.append (location_stack);
+
         var location_time_group = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
         var location_time_label = new Gtk.Label ("<b>Location and Time Settings</b>") {
             use_markup = true,
             halign = Gtk.Align.START,
         };
         location_time_group.append (location_time_label);
+
+        location_time_group.append (location_detect_box);
 
         var settings_grid = new Gtk.Grid () {
             column_spacing = 10,
@@ -82,7 +111,7 @@ public class SolarAngleApp : Gtk.Application {
         var latitude_label = new Gtk.Label ("Latitude (deg):") {
             halign = Gtk.Align.START,
         };
-        var latitude_spin = new Gtk.SpinButton.with_range (-90, 90, 0.1) {
+        latitude_spin = new Gtk.SpinButton.with_range (-90, 90, 0.1) {
             value = latitude,
             digits = 2,
         };
@@ -95,7 +124,7 @@ public class SolarAngleApp : Gtk.Application {
         var longitude_label = new Gtk.Label ("Longitude (deg):") {
             halign = Gtk.Align.START,
         };
-        var longitude_spin = new Gtk.SpinButton.with_range (-180.0, 180.0, 0.1) {
+        longitude_spin = new Gtk.SpinButton.with_range (-180.0, 180.0, 0.1) {
             value = longitude,
             digits = 2,
         };
@@ -108,7 +137,7 @@ public class SolarAngleApp : Gtk.Application {
         var timezone_label = new Gtk.Label ("Timezone (hour):") {
             halign = Gtk.Align.START,
         };
-        var timezone_spin = new Gtk.SpinButton.with_range (-12.0, 14.0, 0.5) {
+        timezone_spin = new Gtk.SpinButton.with_range (-12.0, 14.0, 0.5) {
             value = timezone_offset_hours,
             digits = 2,
         };
@@ -172,7 +201,7 @@ public class SolarAngleApp : Gtk.Application {
             halign = Gtk.Align.START,
         };
         // Initial click info label (Use an extra newline for better spacing)
-        click_info_label = new Gtk.Label ("Click on chart to view data\n") {
+        click_info_label = new Gtk.Label ("Click on the chart to view data\n") {
             halign = Gtk.Align.START,
         };
         click_info_group.append (click_info_title);
@@ -277,7 +306,7 @@ public class SolarAngleApp : Gtk.Application {
         
         // Clear click point when data updates
         has_click_point = false;
-        click_info_label.label = "Click on chart to view data\n";
+        click_info_label.label = "Click on the chart to view data\n";
     }
 
     /**
@@ -315,7 +344,7 @@ public class SolarAngleApp : Gtk.Application {
         } else {
             // Double click or outside plot area - clear point
             has_click_point = false;
-            click_info_label.label = "Click on chart to view data\n";
+            click_info_label.label = "Click on the chart to view data\n";
             drawing_area.queue_draw ();
         }
     }
@@ -401,7 +430,7 @@ public class SolarAngleApp : Gtk.Application {
         }
 
         // Plot solar elevation curve
-        cr.set_source_rgb (1, 0, 0);
+        cr.set_source_rgb (1, 0.5, 0);
         cr.set_line_width (2);
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
             double x = MARGIN_LEFT + chart_width * (i / (double) (RESOLUTION_PER_MIN - 1));
@@ -509,6 +538,7 @@ public class SolarAngleApp : Gtk.Application {
                     export_chart (file);
                 }
             } catch (Error e) {
+                // Dismissed by user, so do not show alert dialog
                 message ("Image file has not been saved: %s", e.message);
             }
         });
@@ -580,6 +610,7 @@ public class SolarAngleApp : Gtk.Application {
                     export_csv_data (file);
                 }
             } catch (Error e) {
+                // Dismissed by user, so do not show alert dialog
                 message ("CSV file has not been saved: %s", e.message);
             }
         });
@@ -617,7 +648,7 @@ public class SolarAngleApp : Gtk.Application {
 
             data_stream.close ();
         } catch (Error e) {
-            message ("Error saving CSV file: %s", e.message);
+            show_error_dialog ("CSV export failed", e.message);
         }
     }
 
@@ -632,5 +663,123 @@ public class SolarAngleApp : Gtk.Application {
     public static int main (string[] args) {
         var app = new SolarAngleApp ();
         return app.run (args);
+    }
+
+    /**
+     * Handler for the automatic location detection button click event.
+     */
+    private void on_auto_detect_location () {
+        location_button.sensitive = false;
+        location_stack.visible_child = location_spinner;
+        location_spinner.start ();
+
+        get_location_async.begin ((obj, res) => {
+            try {
+                get_location_async.end (res);
+            } catch (Error e) {
+                show_error_dialog ("Location detection failed", e.message);
+            }
+            location_button.sensitive = true;
+            location_spinner.stop ();
+            location_stack.visible_child = location_button;
+        });
+    }
+
+    /**
+     * Asynchronously obtains IP-based location information.
+     */
+    private async void get_location_async () throws IOError {
+        var file = File.new_for_uri ("https://ipapi.co/json/");
+        var cancellable = new Cancellable ();
+
+        // Set up a 5-second timeout
+        Timeout.add_seconds (5, () => {
+            cancellable.cancel ();
+            return false;
+        });
+
+        try {
+            var stream = yield file.read_async (Priority.DEFAULT, cancellable);
+            var parser = new Json.Parser ();
+            yield parser.load_from_stream_async (stream, cancellable);
+
+            var root_object = parser.get_root ().get_object ();
+
+            if (root_object.get_boolean_member_with_default ("error", false)) {
+                throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
+            }
+
+            if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
+                latitude = root_object.get_double_member ("latitude");
+                longitude = root_object.get_double_member ("longitude");
+            } else {
+                throw new IOError.FAILED ("No coordinates found in the response");
+            }
+
+            double network_tz_offset = 0.0;
+            bool has_network_tz = false;
+
+            if (root_object.has_member ("utc_offset")) {
+                var offset_str = root_object.get_string_member ("utc_offset");
+                network_tz_offset = double.parse (offset_str) / 100.0;
+                has_network_tz = true;
+            }
+
+            // Get the local timezone
+            var timezone = new TimeZone.local ();
+            var time_interval = timezone.find_interval (GLib.TimeType.UNIVERSAL, selected_date.to_unix ());
+            var local_tz_offset = timezone.get_offset (time_interval) / 3600.0;
+
+            const double TZ_EPSILON = 0.01; // Epsilon for floating point comparison
+            if (has_network_tz && (!(-TZ_EPSILON < (network_tz_offset - local_tz_offset) < TZ_EPSILON))) {
+                // Timezones differ, prompt user for a choice
+                var dialog = new Gtk.AlertDialog (
+                    "Timezone Mismatch: The timezone from the network (UTC%+.2f) differs from your system's timezone (UTC%+.2f).\n\nWhich one would you like to use?",
+                    network_tz_offset,
+                    local_tz_offset
+                );
+                dialog.set_buttons ({"Use Network Timezone", "Use System Timezone"});
+
+                // Asynchronously wait for the user's choice
+                var choice = yield dialog.choose (window, null);
+
+                if (choice == 0) {
+                    timezone_offset_hours = network_tz_offset;
+                } else {
+                    timezone_offset_hours = local_tz_offset;
+                }
+            } else {
+                // Network's timezone is the same as local's or unavailable
+                timezone_offset_hours = local_tz_offset;
+            }
+
+            // Update UI on the main thread
+            Idle.add (() => {
+                latitude_spin.value = latitude;
+                longitude_spin.value = longitude;
+                timezone_spin.value = timezone_offset_hours;
+                update_plot_data ();
+                drawing_area.queue_draw ();
+                return false;
+            });
+        } catch (Error e) {
+            throw new IOError.FAILED ("Failed to get location: %s", e.message);
+        }
+    }
+
+    /**
+     * Shows a generic error dialog and logs the error message.
+     *
+     * @param title The title of the error dialog.
+     * @param error_message The error message to display.
+     */
+    private void show_error_dialog (string title, string error_message) {
+        var dialog = new Gtk.AlertDialog (
+            "%s: %s",
+            title,
+            error_message
+        );
+        dialog.show (window);
+        message ("%s: %s", title, error_message);
     }
 }

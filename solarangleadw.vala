@@ -1,4 +1,4 @@
-#!/usr/bin/env -S vala --pkg=gtk4 --pkg=libadwaita-1 -X -lm -X -O2 -X -march=native -X -pipe
+#!/usr/bin/env -S vala --pkg=gtk4 --pkg=libadwaita-1 --pkg=json-glib-1.0 -X -lm -X -O2 -X -march=native -X -pipe
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 /**
@@ -14,7 +14,7 @@ public class SolarAngleApp : Adw.Application {
     private const double DEG2RAD = Math.PI / 180.0;
     private const double RAD2DEG = 180.0 / Math.PI;
     private const int RESOLUTION_PER_MIN = 1440; // 1 sample per minute
-    // Constants for margins in the drawing area
+    // Constants for drawing area
     private const int MARGIN_LEFT = 70;
     private const int MARGIN_RIGHT = 20;
     private const int MARGIN_TOP = 50;
@@ -31,6 +31,14 @@ public class SolarAngleApp : Adw.Application {
     private double clicked_time_hours = 0.0;
     private double corresponding_angle = 0.0;
     private bool has_click_point = false;
+
+    // Location detection widgets
+    private Gtk.Stack location_stack;
+    private Gtk.Spinner location_spinner;
+    private Gtk.Button location_button;
+    private Adw.SpinRow latitude_row;
+    private Adw.SpinRow longitude_row;
+    private Adw.SpinRow timezone_row;
 
     // Color theme struct for chart drawing
     private struct ThemeColors {
@@ -58,7 +66,7 @@ public class SolarAngleApp : Adw.Application {
         grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Gray grid
         axis_r: 0.0, axis_g: 0.0, axis_b: 0.0,              // Black axes
         text_r: 0.0, text_g: 0.0, text_b: 0.0,              // Black text
-        curve_r: 1.0, curve_g: 0.0, curve_b: 0.0,           // Red curve
+        curve_r: 1.0, curve_g: 0.5, curve_b: 0.0,           // Red curve
         shade_r: 0.7, shade_g: 0.7, shade_b: 0.7, shade_a: 0.3, // Light gray shade
         point_r: 0.0, point_g: 0.0, point_b: 1.0,           // Blue point
         line_r: 0.0, line_g: 0.0, line_b: 1.0, line_a: 0.5  // Blue guide lines
@@ -70,7 +78,7 @@ public class SolarAngleApp : Adw.Application {
         grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Light gray grid
         axis_r: 1.0, axis_g: 1.0, axis_b: 1.0,              // White axes
         text_r: 1.0, text_g: 1.0, text_b: 1.0,              // White text
-        curve_r: 1.0, curve_g: 0.0, curve_b: 0.0,           // Bright red curve
+        curve_r: 1.0, curve_g: 0.5, curve_b: 0.0,           // Bright red curve
         shade_r: 0.3, shade_g: 0.3, shade_b: 0.3, shade_a: 0.7, // Dark gray shade
         point_r: 0.3, point_g: 0.7, point_b: 1.0,           // Light blue point
         line_r: 0.3, line_g: 0.7, line_b: 1.0, line_a: 0.7  // Light blue guide lines
@@ -97,7 +105,7 @@ public class SolarAngleApp : Adw.Application {
         window = new Adw.ApplicationWindow (this) {
             title = "Solar Angle Calculator",
         };
-        
+
         // Create header bar
         var header_bar = new Adw.HeaderBar () {
             title_widget = new Adw.WindowTitle ("Solar Angle Calculator", ""),
@@ -146,7 +154,38 @@ public class SolarAngleApp : Adw.Application {
             title = "Location and Time Settings",
         };
 
-        var latitude_row = new Adw.SpinRow.with_range (-90, 90, 0.1) {
+        // Auto-detect location button
+        var location_detect_row = new Adw.ActionRow () {
+            title = "Auto-detect Location",
+            subtitle = "Get current location and timezone",
+            activatable = true,
+        };
+
+        var location_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+        // Use a stack to keep consistent allocation and avoid layout jitter
+        location_stack = new Gtk.Stack () {
+            hhomogeneous = true,
+            vhomogeneous = true,
+            transition_type = Gtk.StackTransitionType.CROSSFADE,
+        };
+        location_spinner = new Gtk.Spinner ();
+        location_button = new Gtk.Button () {
+            icon_name = "find-location-symbolic",
+            valign = Gtk.Align.CENTER,
+            css_classes = { "flat" },
+            tooltip_text = "Auto-detect current location",
+        };
+        location_button.clicked.connect (on_auto_detect_location);
+        // Add to stack as separate pages
+        location_stack.add_child (location_button);
+        location_stack.add_child (location_spinner);
+        location_stack.visible_child = location_button;
+        // Place stack into the suffix box
+        location_box.append (location_stack);
+        location_detect_row.add_suffix (location_box);
+        location_detect_row.activated.connect (on_auto_detect_location);
+
+        latitude_row = new Adw.SpinRow.with_range (-90, 90, 0.1) {
             title = "Latitude",
             subtitle = "Degrees",
             value = latitude,
@@ -158,7 +197,7 @@ public class SolarAngleApp : Adw.Application {
             drawing_area.queue_draw ();
         });
 
-        var longitude_row = new Adw.SpinRow.with_range (-180.0, 180.0, 0.1) {
+        longitude_row = new Adw.SpinRow.with_range (-180.0, 180.0, 0.1) {
             title = "Longitude",
             subtitle = "Degrees",
             value = longitude,
@@ -170,7 +209,7 @@ public class SolarAngleApp : Adw.Application {
             drawing_area.queue_draw ();
         });
 
-        var timezone_row = new Adw.SpinRow.with_range (-12.0, 14.0, 0.5) {
+        timezone_row = new Adw.SpinRow.with_range (-12.0, 14.0, 0.5) {
             title = "Timezone",
             subtitle = "Hours from UTC",
             value = timezone_offset_hours,
@@ -182,6 +221,7 @@ public class SolarAngleApp : Adw.Application {
             drawing_area.queue_draw ();
         });
 
+        location_time_group.add (location_detect_row);
         location_time_group.add (latitude_row);
         location_time_group.add (longitude_row);
         location_time_group.add (timezone_row);
@@ -288,6 +328,132 @@ public class SolarAngleApp : Adw.Application {
 
         window.content = toolbar_view;
         window.present ();
+    }
+
+    /**
+     * Handles auto-detect location button click.
+     * 
+     * Uses a free IP geolocation service to get current location and timezone.
+     */
+    private void on_auto_detect_location () {
+        location_button.sensitive = false;
+        // Switch to spinner page without changing allocation size
+        location_stack.visible_child = location_spinner;
+        location_spinner.start ();
+
+         // Run async to avoid blocking the UI
+         get_location_async.begin ((obj, res) => {
+            try {
+                get_location_async.end (res);
+            } catch (Error e) {
+                show_error_dialog ("Location Detection Failed", e.message);
+            }
+
+            location_button.sensitive = true;
+            location_spinner.stop ();
+            // Switch back to button page
+            location_stack.visible_child = location_button;
+         });
+     }
+
+    /**
+     * Asynchronously gets current location using IP geolocation service with timeout.
+     */
+    private async void get_location_async () throws IOError {
+        var file = File.new_for_uri ("https://ipapi.co/json/");
+        var cancellable = new Cancellable ();
+
+        // Set up a 5-second timeout
+        Timeout.add_seconds (5, () => {
+            cancellable.cancel ();
+            return false;
+        });
+
+        try {
+            var stream = yield file.read_async (Priority.DEFAULT, cancellable);
+            var parser = new Json.Parser ();
+            yield parser.load_from_stream_async (stream, cancellable);
+
+            var root_object = parser.get_root ().get_object ();
+            if (root_object.get_boolean_member_with_default ("error", false)) {
+                throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
+            }
+
+            if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
+                latitude = root_object.get_double_member ("latitude");
+                longitude = root_object.get_double_member ("longitude");
+            } else {
+                throw new IOError.FAILED ("No coordinates found in the response");
+            }
+
+            double network_tz_offset = 0.0;
+            bool has_network_tz = false;
+
+            if (root_object.has_member ("utc_offset")) {
+                var offset_str = root_object.get_string_member ("utc_offset");
+                network_tz_offset = double.parse (offset_str) / 100.0;
+                has_network_tz = true;
+            }
+
+            // Get local system's current timezone offset
+            var timezone = new TimeZone.local ();
+            var time_interval = timezone.find_interval (GLib.TimeType.UNIVERSAL, selected_date.to_unix ());
+            var local_tz_offset = timezone.get_offset (time_interval) / 3600.0;
+
+            const double TZ_EPSILON = 0.01; // Epsilon for floating point comparison
+            if (has_network_tz && (!(-TZ_EPSILON < (network_tz_offset - local_tz_offset) < TZ_EPSILON))) {
+                const string RESPONSE_NETWORK = "network"; // ID for network timezone
+                const string RESPONSE_LOCAL = "local"; // ID for local timezone
+
+                // Timezones differ, prompt user for a choice
+                var dialog = new Adw.AlertDialog (
+                    "Timezone Mismatch",
+                    "The timezone from the network (UTC%+.2f) differs from your system's timezone (UTC%+.2f).\n\nWhich one would you like to use?".printf (
+                        network_tz_offset,
+                        local_tz_offset
+                    )
+                );
+                dialog.add_response (RESPONSE_NETWORK, "Use Network Timezone");
+                dialog.add_response (RESPONSE_LOCAL, "Use System Timezone");
+                dialog.default_response = RESPONSE_NETWORK;
+
+                // Asynchronously wait for the user's choice
+                string choice = yield dialog.choose (window, null);
+
+                if (choice == RESPONSE_NETWORK) {
+                    timezone_offset_hours = network_tz_offset;
+                } else {
+                    timezone_offset_hours = local_tz_offset;
+                }
+            } else {
+                // Network's timezone is the same as local's or unavailable
+                timezone_offset_hours = local_tz_offset;
+            }
+
+            Idle.add (() => {
+                latitude_row.value = latitude;
+                longitude_row.value = longitude;
+                timezone_row.value = timezone_offset_hours;
+                update_plot_data ();
+                drawing_area.queue_draw ();
+                return false;
+            });
+        } catch (Error e) {
+            throw new IOError.FAILED ("Failed to get location: %s", e.message);
+        }
+    }
+
+    /**
+     * Shows a generic error dialog and logs the error message.
+     *
+     * @param title The title of the error dialog.
+     * @param error_message The error message to display.
+     */
+    private void show_error_dialog (string title, string error_message) {
+        var dialog = new Adw.AlertDialog (title, error_message);
+        dialog.add_response ("ok", "OK");
+        dialog.present (window);
+        message ("%s: %s", title, error_message);
     }
 
     /**
@@ -528,7 +694,7 @@ public class SolarAngleApp : Adw.Application {
         // Draw axis titles
         cr.set_source_rgb (colors.text_r, colors.text_g, colors.text_b);
         cr.set_font_size (20);
-        string x_title = "Time (Hour)";
+        string x_title = "Time (hours)";
         Cairo.TextExtents x_ext;
         cr.text_extents (x_title, out x_ext);
         cr.move_to ((double) width / 2 - x_ext.width / 2, height - MARGIN_BOTTOM + 55);
@@ -597,6 +763,7 @@ public class SolarAngleApp : Adw.Application {
                     export_chart (file);
                 }
             } catch (Error e) {
+                // Dismissed by user, so do not show alert dialog
                 message ("Image file has not been saved: %s", e.message);
             }
         });
@@ -668,6 +835,7 @@ public class SolarAngleApp : Adw.Application {
                     export_csv_data (file);
                 }
             } catch (Error e) {
+                // Dismissed by user, so do not show alert dialog
                 message ("CSV file has not been saved: %s", e.message);
             }
         });
@@ -705,7 +873,7 @@ public class SolarAngleApp : Adw.Application {
 
             data_stream.close ();
         } catch (Error e) {
-            message ("Error saving CSV file: %s", e.message);
+            show_error_dialog ("CSV export failed", e.message);
         }
     }
 
