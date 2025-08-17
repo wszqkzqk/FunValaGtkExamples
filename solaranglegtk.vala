@@ -690,81 +690,80 @@ public class SolarAngleApp : Gtk.Application {
      */
     private async void get_location_async () throws IOError {
         var file = File.new_for_uri ("https://ipapi.co/json/");
-        var cancellable = new Cancellable ();
+        var parser = new Json.Parser ();
 
-        // Set up a 5-second timeout
-        Timeout.add_seconds (5, () => {
+        var cancellable = new Cancellable ();
+        var timeout_id = Timeout.add_seconds_once (5, () => {
             cancellable.cancel ();
-            return false;
         });
 
         try {
             var stream = yield file.read_async (Priority.DEFAULT, cancellable);
-            var parser = new Json.Parser ();
             yield parser.load_from_stream_async (stream, cancellable);
-
-            var root_object = parser.get_root ().get_object ();
-
-            if (root_object.get_boolean_member_with_default ("error", false)) {
-                throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
-            }
-
-            if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
-                latitude = root_object.get_double_member ("latitude");
-                longitude = root_object.get_double_member ("longitude");
-            } else {
-                throw new IOError.FAILED ("No coordinates found in the response");
-            }
-
-            double network_tz_offset = 0.0;
-            bool has_network_tz = false;
-
-            if (root_object.has_member ("utc_offset")) {
-                var offset_str = root_object.get_string_member ("utc_offset");
-                network_tz_offset = double.parse (offset_str) / 100.0;
-                has_network_tz = true;
-            }
-
-            // Get the local timezone
-            var timezone = new TimeZone.local ();
-            var time_interval = timezone.find_interval (GLib.TimeType.UNIVERSAL, selected_date.to_unix ());
-            var local_tz_offset = timezone.get_offset (time_interval) / 3600.0;
-
-            const double TZ_EPSILON = 0.01; // Epsilon for floating point comparison
-            if (has_network_tz && (!(-TZ_EPSILON < (network_tz_offset - local_tz_offset) < TZ_EPSILON))) {
-                // Timezones differ, prompt user for a choice
-                var dialog = new Gtk.AlertDialog (
-                    "Timezone Mismatch: The timezone from the network (UTC%+.2f) differs from your system's timezone (UTC%+.2f).\n\nWhich one would you like to use?",
-                    network_tz_offset,
-                    local_tz_offset
-                );
-                dialog.set_buttons ({"Use Network Timezone", "Use System Timezone"});
-
-                // Asynchronously wait for the user's choice
-                var choice = yield dialog.choose (window, null);
-
-                if (choice == 0) {
-                    timezone_offset_hours = network_tz_offset;
-                } else {
-                    timezone_offset_hours = local_tz_offset;
-                }
-            } else {
-                // Network's timezone is the same as local's or unavailable
-                timezone_offset_hours = local_tz_offset;
-            }
-
-            // Update UI on the main thread
-            Idle.add (() => {
-                latitude_spin.value = latitude;
-                longitude_spin.value = longitude;
-                timezone_spin.value = timezone_offset_hours;
-                update_plot_data ();
-                drawing_area.queue_draw ();
-                return false;
-            });
         } catch (Error e) {
             throw new IOError.FAILED ("Failed to get location: %s", e.message);
+        } finally {
+            // MUST free the timeout here (local variable `cancellable` is NOT owned by Timeout)
+            if (!cancellable.is_cancelled ()) {
+                Source.remove (timeout_id);
+            }
         }
+
+        var root_object = parser.get_root ().get_object ();
+
+        if (root_object.get_boolean_member_with_default ("error", false)) {
+            throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
+        }
+
+        if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
+            latitude = root_object.get_double_member ("latitude");
+            longitude = root_object.get_double_member ("longitude");
+        } else {
+            throw new IOError.FAILED ("No coordinates found in the response");
+        }
+
+        double network_tz_offset = 0.0;
+        bool has_network_tz = false;
+
+        if (root_object.has_member ("utc_offset")) {
+            var offset_str = root_object.get_string_member ("utc_offset");
+            network_tz_offset = double.parse (offset_str) / 100.0;
+            has_network_tz = true;
+        }
+
+        // Get the local timezone
+        var timezone = new TimeZone.local ();
+        var time_interval = timezone.find_interval (GLib.TimeType.UNIVERSAL, selected_date.to_unix ());
+        var local_tz_offset = timezone.get_offset (time_interval) / 3600.0;
+
+        const double TZ_EPSILON = 0.01; // Epsilon for floating point comparison
+        if (has_network_tz && (!(-TZ_EPSILON < (network_tz_offset - local_tz_offset) < TZ_EPSILON))) {
+            var dialog = new Gtk.AlertDialog (
+                "Timezone Mismatch: The timezone from the network (UTC%+.2f) differs from your system's timezone (UTC%+.2f).\n\nWhich one would you like to use?",
+                network_tz_offset,
+                local_tz_offset
+            );
+            dialog.set_buttons ({"Use Network Timezone", "Use System Timezone"});
+
+            try {
+                var choice = yield dialog.choose (window, null);
+                timezone_offset_hours = (choice == 0) ? network_tz_offset : local_tz_offset;
+            } catch (Error e) {
+                throw new IOError.FAILED ("Failed to get user choice: %s", e.message);
+            }
+        } else {
+            timezone_offset_hours = local_tz_offset;
+        }
+
+        // Update UI on the main thread
+        Idle.add (() => {
+            latitude_spin.value = latitude;
+            longitude_spin.value = longitude;
+            timezone_spin.value = timezone_offset_hours;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+            return false;
+        });
     }
 
     /**
