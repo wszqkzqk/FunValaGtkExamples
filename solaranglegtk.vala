@@ -3,7 +3,7 @@
 
 /**
  * Solar Angle Calculator Application.
- *
+ * Copyright (C) 2025 wszqkzqk <wszqkzqk@qq.com>
  * A GTK4 application that calculates and visualizes solar elevation angles
  * throughout the day for a given location and date. The application provides
  * an interactive interface for setting latitude, longitude, timezone, and date,
@@ -755,15 +755,11 @@ public class SolarAngleApp : Gtk.Application {
             timezone_offset_hours = local_tz_offset;
         }
 
-        // Update UI on the main thread
-        Idle.add (() => {
-            latitude_spin.value = latitude;
-            longitude_spin.value = longitude;
-            timezone_spin.value = timezone_offset_hours;
-            update_plot_data ();
-            drawing_area.queue_draw ();
-            return false;
-        });
+        latitude_spin.value = latitude;
+        longitude_spin.value = longitude;
+        timezone_spin.value = timezone_offset_hours;
+        update_plot_data ();
+        drawing_area.queue_draw ();
     }
 
     /**

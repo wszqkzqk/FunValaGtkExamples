@@ -3,7 +3,7 @@
 
 /**
  * Solar Angle Calculator Application.
- *
+ * Copyright (C) 2025 wszqkzqk <wszqkzqk@qq.com>
  * A libadwaita application that calculates and visualizes solar elevation angles
  * throughout the day for a given location and date. The application provides
  * an interactive interface for setting latitude, longitude, timezone, and date,
@@ -20,19 +20,21 @@ public class SolarAngleApp : Adw.Application {
     private const int MARGIN_TOP = 50;
     private const int MARGIN_BOTTOM = 70;
 
-    private Adw.ApplicationWindow window;
-    private Gtk.DrawingArea drawing_area;
-    private Gtk.Label click_info_label;
+    // Model / persistent state
     private DateTime selected_date;
     private double sun_angles[RESOLUTION_PER_MIN];
     private double latitude = 0.0;
     private double longitude = 0.0;
     private double timezone_offset_hours = 0.0;
+    // Interaction / transient UI state
     private double clicked_time_hours = 0.0;
     private double corresponding_angle = 0.0;
     private bool has_click_point = false;
 
-    // Location detection widgets
+    // UI widgets
+    private Adw.ApplicationWindow window;
+    private Gtk.DrawingArea drawing_area;
+    private Gtk.Label click_info_label;
     private Gtk.Stack location_stack;
     private Gtk.Spinner location_spinner;
     private Gtk.Button location_button;
@@ -52,8 +54,8 @@ public class SolarAngleApp : Adw.Application {
         double line_r; double line_g; double line_b; double line_a; // Guide line with alpha
     }
 
-    // Light theme color constants
-    private ThemeColors LIGHT_THEME = {
+    // Light theme
+    private static ThemeColors LIGHT_THEME = {
         bg_r: 1.0, bg_g: 1.0, bg_b: 1.0,                    // White background
         grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Gray grid
         axis_r: 0.0, axis_g: 0.0, axis_b: 0.0,              // Black axes
@@ -64,10 +66,10 @@ public class SolarAngleApp : Adw.Application {
         line_r: 0.0, line_g: 0.0, line_b: 1.0, line_a: 0.5  // Blue guide lines
     };
 
-    // Dark theme color constants
-    private ThemeColors DARK_THEME = {
+    // Dark theme
+    private static ThemeColors DARK_THEME = {
         bg_r: 0.0, bg_g: 0.0, bg_b: 0.0,                    // Black background
-        grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Light gray grid
+        grid_r: 0.5, grid_g: 0.5, grid_b: 0.5, grid_a: 0.5, // Gray grid
         axis_r: 1.0, axis_g: 1.0, axis_b: 1.0,              // White axes
         text_r: 1.0, text_g: 1.0, text_b: 1.0,              // White text
         curve_r: 1.0, curve_g: 0.5, curve_b: 0.0,           // Orange curve
@@ -419,14 +421,11 @@ public class SolarAngleApp : Adw.Application {
             timezone_offset_hours = local_tz_offset;
         }
 
-        Idle.add (() => {
-            latitude_row.value = latitude;
-            longitude_row.value = longitude;
-            timezone_row.value = timezone_offset_hours;
-            update_plot_data ();
-            drawing_area.queue_draw ();
-            return false;
-        });
+        latitude_row.value = latitude;
+        longitude_row.value = longitude;
+        timezone_row.value = timezone_offset_hours;
+        update_plot_data ();
+        drawing_area.queue_draw ();
     }
 
     /**
