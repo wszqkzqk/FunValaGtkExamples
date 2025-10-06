@@ -677,8 +677,8 @@ public class DayLengthApp : Gtk.Application {
             // Write data
             for (int i = 0; i < day_lengths.length; i += 1) {
                 var date = new DateTime (new TimeZone.local (), selected_year, 1, 1, 0, 0, 0).add_days (i);
-                string date_str = date.format ("%Y-%m-%d");
-                data_stream.put_string ("%d,%s,%.6f\n".printf (i + 1, date_str, day_lengths[i]));
+                string date_str = date.format ("%Y%m%d");
+                data_stream.put_string ("%d,%s,%.3f\n".printf (i + 1, date_str, day_lengths[i]));
             }
 
             data_stream.close ();
