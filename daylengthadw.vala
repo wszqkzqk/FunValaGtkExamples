@@ -333,10 +333,10 @@ public class DayLengthApp : Adw.Application {
         if (cos_hour_angle.is_nan ()) {
             // Invalid value, return 12.0 hours
             return 12.0;
-        } else if (cos_hour_angle > 1.0) {
+        } else if (cos_hour_angle >= 1.0) {
             // Polar night (sun never rises)
             return 0.0;
-        } else if (cos_hour_angle < -1.0) {
+        } else if (cos_hour_angle <= -1.0) {
             // Polar day (sun never sets)
             return 24.0;
         }
@@ -459,10 +459,9 @@ public class DayLengthApp : Adw.Application {
 
             // Get date for this day
             var date = new DateTime (new TimeZone.local (), selected_year, 1, 1, 0, 0, 0).add_days (clicked_day);
-            string date_str = date.format ("%B %d");
             
             string info_text = "Date: %s (Day %d)\nDay Length: %.2f hours".printf (
-                date_str, clicked_day + 1, day_lengths[clicked_day]
+                date.format ("%B %d"), clicked_day + 1, day_lengths[clicked_day]
             );
 
             click_info_label.label = info_text;

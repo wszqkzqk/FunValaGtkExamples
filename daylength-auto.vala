@@ -59,10 +59,10 @@ private double calculate_day_length_simplified (double latitude_rad, int day_of_
     if (cos_hour_angle.is_nan ()) {
         // Invalid value, return 12.0 hours
         return 12.0;
-    } else if (cos_hour_angle > 1.0) {
+    } else if (cos_hour_angle >= 1.0) {
         // Polar night (sun never rises)
         return 0.0;
-    } else if (cos_hour_angle < -1.0) {
+    } else if (cos_hour_angle <= -1.0) {
         // Polar day (sun never sets)
         return 24.0;
     }
