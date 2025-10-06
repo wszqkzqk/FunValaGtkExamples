@@ -1,4 +1,4 @@
-#!/usr/bin/env -S vala -X -lm -X -O2 -X -march=native -X -pipe
+#!/usr/bin/env -S vala --pkg=gio-2.0 --pkg=json-glib-1.0 -X -lm -X -O2 -X -march=native -X -pipe
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 /**
@@ -76,19 +76,57 @@ private double calculate_day_length_simplified (double latitude_rad, int day_of_
 }
 
 /**
+ * Asynchronously gets current location using IP geolocation service.
+ */
+private async double get_location_async () throws IOError {
+    var file = File.new_for_uri ("https://ipapi.co/json/");
+    var parser = new Json.Parser ();
+    double latitude = 0.0;
+
+    var cancellable = new Cancellable ();
+    var timeout_id = Timeout.add_seconds_once (5, () => {
+        cancellable.cancel ();
+    });
+
+    try {
+        var stream = yield file.read_async (Priority.DEFAULT, cancellable);
+        yield parser.load_from_stream_async (stream, cancellable);
+    } catch (Error e) {
+        throw new IOError.FAILED ("Failed to get location: %s", e.message);
+    } finally {
+        if (!cancellable.is_cancelled ()) {
+            Source.remove (timeout_id);
+        }
+    }
+
+    var root_object = parser.get_root ().get_object ();
+    if (root_object.get_boolean_member_with_default ("error", false)) {
+        throw new IOError.FAILED ("Location service error: %s", 
+            root_object.get_string_member_with_default ("reason", "Unknown error"));
+    }
+
+    if (root_object.has_member ("latitude")) {
+        latitude = root_object.get_double_member ("latitude");
+    } else {
+        throw new IOError.FAILED ("No latitude found in the response");
+    }
+    return latitude;
+}
+
+/**
  * Main entry point.
  * @param args Command line arguments.
  * @return Exit status code.
  */
-public static int main (string[] args) {
+public static async int main (string[] args) {
     Intl.setlocale ();
     // Define and parse command line arguments
-    double latitude_deg = 0.0; 
+    double latitude_deg = double.NAN; 
     string? date_str = null;
     double horizon_deg = -0.83;
     OptionEntry[] entries = {
         { "latitude", 'l', OptionFlags.NONE, OptionArg.DOUBLE, out latitude_deg,
-          "Geographic latitude of observation point (in degrees, positive for North, negative for South, default: 0.0).", "DEG" },
+          "Geographic latitude of observation point (in degrees, positive for North, negative for South). If not specified, auto-detects via IP.", "DEG" },
         { "date", 'd', OptionFlags.NONE, OptionArg.STRING, out date_str,
           "Date (format: YYYY-MM-DD), defaults to today", "DATE" },
         { "horizon", '\0', OptionFlags.NONE, OptionArg.DOUBLE, out horizon_deg,
@@ -130,6 +168,18 @@ public static int main (string[] args) {
         date_obj = new DateTime.from_iso8601 (iso_str, null);
         if (date_obj == null) {
             printerr ("Invalid date format: %s\n", date_str);
+            return 1;
+        }
+    }
+
+    // Auto-detect latitude if not provided
+    if (latitude_deg.is_nan ()) {
+        try {
+            printerr ("Detecting location...\n");
+            latitude_deg = yield get_location_async ();
+            printerr ("Detected latitude: %.2f°\n", latitude_deg);
+        } catch (IOError e) {
+            printerr ("Location detection failed: %s\n", e.message);
             return 1;
         }
     }
