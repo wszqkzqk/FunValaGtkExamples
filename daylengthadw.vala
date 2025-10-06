@@ -311,7 +311,7 @@ public class DayLengthApp : Adw.Application {
         double days_in_year_val = days_in_year (year);
         
         // Calculate fractional year in radians
-        double gamma_rad = (2.0 * Math.PI / days_in_year_val) * (day_of_year - 1);
+        double gamma_rad = (2.0 * Math.PI / days_in_year_val) * day_of_year;
         
         // Solar declination using NOAA formula (radians)
         double decl_rad = 0.006918
