@@ -469,7 +469,7 @@ public class DayLengthApp : Adw.Application {
             drawing_area.queue_draw ();
         } else {
             has_click_point = false;
-            click_info_label.label = "Click on chart to view data";
+            click_info_label.label = "Click on chart to view data\n";
             drawing_area.queue_draw ();
         }
     }
