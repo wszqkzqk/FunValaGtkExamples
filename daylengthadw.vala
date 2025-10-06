@@ -330,8 +330,10 @@ public class DayLengthApp : Adw.Application {
         double cos_hour_angle = (Math.sin (horizon_angle_rad) - Math.sin (latitude_rad) * Math.sin (decl_rad)) 
                               / (Math.cos (latitude_rad) * Math.cos (decl_rad));
         
-        // Handle polar day and polar night
-        if (cos_hour_angle > 1.0) {
+        if (cos_hour_angle.is_nan ()) {
+            // Invalid value, return 12.0 hours
+            return 12.0;
+        } else if (cos_hour_angle > 1.0) {
             // Polar night (sun never rises)
             return 0.0;
         } else if (cos_hour_angle < -1.0) {

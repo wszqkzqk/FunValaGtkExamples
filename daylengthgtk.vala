@@ -1,374 +1,533 @@
-#!/usr/bin/env -S vala --pkg=gtk4 -X -lm -X -O2 -X -march=native -X -pipe
+#!/usr/bin/env -S vala --pkg=gtk4 --pkg=json-glib-1.0 -X -lm -X -O2 -X -march=native -X -pipe
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
-// Helper functions to compute day-of-year, solar declination and day length
-
 /**
- * Returns the number of days in a given year.
- *
- * @param year The year to calculate the number of days.
- * @return Total number of days in the year.
+ * Day Length Calculator Application with Simplified Solar Formula.
+ * Copyright (C) 2025 wszqkzqk <wszqkzqk@qq.com>
+ * 
+ * A GTK4 application that calculates and visualizes day length
+ * throughout the year using astronomical formulas based on solar declination.
  */
-private inline int days_in_year (int year) {
-    // Leap year: divisible by 400 or divisible by 4 but not by 100.
-    if ((year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))) {
-        return 366;
-    }
-    return 365;
-}
+public class DayLengthApp : Gtk.Application {
+    // Constants
+    private const double DEG2RAD = Math.PI / 180.0;
+    private const double RAD2DEG = 180.0 / Math.PI;
+    private const int MARGIN_LEFT = 70;
+    private const int MARGIN_RIGHT = 20;
+    private const int MARGIN_TOP = 50;
+    private const int MARGIN_BOTTOM = 70;
 
-/**
- * Computes solar declination (δ) in radians using NOAA's empirical formula.
- *
- * δ = 0.006918
- *   - 0.399912 * cos(γ)
- *   + 0.070257 * sin(γ)
- *   - 0.006758 * cos(2γ)
- *   + 0.000907 * sin(2γ)
- *   - 0.002697 * cos(3γ)
- *   + 0.001480 * sin(3γ)
- *
- * where γ = 2π * n / days_in_year(year).
- *
- * @param n     Day of year (1..365/366)
- * @param year  Calendar year for days calculation
- * @return Solar declination in radians.
- */
-private inline double solar_declination (int n, int year) {
-    double days = days_in_year (year);
-    double gamma = 2.0 * Math.PI * n / days;
-    return 0.006918
-        - 0.399912 * Math.cos (gamma)
-        + 0.070257 * Math.sin (gamma)
-        - 0.006758 * Math.cos (2 * gamma)
-        + 0.000907 * Math.sin (2 * gamma)
-        - 0.002697 * Math.cos (3 * gamma)
-        + 0.00148  * Math.sin (3 * gamma);
-}
+    // Model / persistent state
+    private double latitude = 0.0;
+    private int selected_year;
+    private double horizon_angle = -0.83; // Refraction-corrected horizon angle in degrees
+    private double[] day_lengths; // Hours of daylight for each day
+    private int clicked_day = -1; // Selected day on chart
+    private bool has_click_point = false;
 
-/**
- * Calculates the day length (in hours) for a given latitude (in radians) and day number.
- *
- * Using formula: T = (24/π) * arccos( -tan(φ) * tan(δ) )
- *
- * φ: observer's latitude, δ: solar declination
- *
- * When |tan φ * tan δ| > 1, returns polar day (24 hours) or polar night (0 hours)
- *
- * @param latitude_rad Latitude in radians.
- * @param n The day number in the year.
- * @return Day length in hours.
- */
-private inline double compute_day_length (double latitude_rad, int n, int year) {
-    double phi = latitude_rad;
-    double delta = solar_declination (n, year);
-    double X = -Math.tan (phi) * Math.tan (delta);
-    if (X < -1) {
-        return 24.0; // Polar day
-    } else if (X > 1) {
-        return 0.0;  // Polar night
-    } else {
-        // 'omega0' is the half-angle (in radians) corresponding to the time from sunrise to solar noon.
-        // Since 2π radians represent 24 hours, 1 radian equals 24/(2π) hours.
-        // Multiplying omega0 by (24/Math.PI) converts this angle to the total day length in hours.
-        double omega0 = Math.acos (X); // computed in radians
-        double T = (24.0 / Math.PI) * omega0; // convert to hours
-        return T;
-    }
-}
-
-/**
- * Generates an array of day lengths for all days at the given latitude (in radians) and year.
- *
- * @param latitude_rad Latitude in radians.
- * @param year The year for which to generate day lengths.
- * @return Array of day lengths in hours.
- */
-private inline double[] generate_day_lengths (double latitude_rad, int year) {
-    int total_days = days_in_year (year);
-    double[] lengths = new double[total_days];
-    for (int i = 0; i < total_days; i += 1) {
-        lengths[i] = compute_day_length (latitude_rad, i + 1, year);
-    }
-    return lengths;
-}
-
-/**
- * Window for displaying the day length plot.
- */
-public class DayLengthWindow : Gtk.ApplicationWindow {
-    private Gtk.SpinButton latitude_entry;
-    private Gtk.SpinButton year_entry;
+    // UI widgets
+    private Gtk.ApplicationWindow window;
     private Gtk.DrawingArea drawing_area;
-    private double[] day_lengths;
-    private int current_year;
-    private double latitude_deg;
-    private Gtk.Button export_button;
+    private Gtk.Label click_info_label;
+    private Gtk.Stack location_stack;
+    private Gtk.Spinner location_spinner;
+    private Gtk.Button location_button;
+    private Gtk.SpinButton latitude_spin;
+    private Gtk.SpinButton year_spin;
+    private Gtk.SpinButton horizon_spin;
 
     /**
-     * Constructs a new DayLengthWindow.
-     *
-     * @param app The Gtk.Application instance.
+     * Creates a new DayLengthApp instance.
      */
-    public DayLengthWindow (Gtk.Application app) {
-        Object (
-            application: app,
-            title: "Day Length Plotter",
-            default_width: 800,
-            default_height: 600
-        );
-
-        // Initialize current_year first
+    public DayLengthApp () {
+        Object (application_id: "com.github.wszqkzqk.DayLengthGtk");
         DateTime now = new DateTime.now_local ();
-        current_year = now.get_year ();
+        selected_year = now.get_year ();
+    }
 
-        // Use vertical box as the main container
-        var vbox_main = new Gtk.Box (Gtk.Orientation.VERTICAL, 10) {
-            // Add top margin but do not add other margins since drawing area expands
-            margin_top = 10
+    protected override void activate () {
+        window = new Gtk.ApplicationWindow (this) {
+            title = "Day Length Calculator",
+            default_width = 1000,
+            default_height = 700,
         };
-        this.child = vbox_main;
 
-        // Input area (using horizontal Box layout)
-        var hbox_controls = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 10) {
-            margin_start = 10,
-            margin_end = 10
+        var main_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+
+        var left_panel = new Gtk.Box (Gtk.Orientation.VERTICAL, 12) {
+            hexpand = false,
+            vexpand = true,
+            width_request = 320,
+            margin_start = 12,
+            margin_end = 12,
+            margin_top = 12,
+            margin_bottom = 12,
         };
-        vbox_main.append (hbox_controls);
 
-        var lat_label = new Gtk.Label ("<b>Latitude (degrees):</b>") {
+        // Location Settings Group
+        var location_group = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+        var location_label = new Gtk.Label ("<b>Location Settings</b>") {
+            use_markup = true,
             halign = Gtk.Align.START,
-            use_markup = true
         };
-        hbox_controls.append (lat_label);
+        location_group.append (location_label);
 
-        latitude_entry = new Gtk.SpinButton.with_range (-90.0, 90.0, 0.1) {
+        // Auto-detect location
+        var location_detect_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+        location_stack = new Gtk.Stack () {
+            hhomogeneous = true,
+            vhomogeneous = true,
+            transition_type = Gtk.StackTransitionType.CROSSFADE,
+        };
+        location_spinner = new Gtk.Spinner ();
+        location_button = new Gtk.Button.with_label ("Detect Location") {
+            valign = Gtk.Align.CENTER,
+            tooltip_text = "Auto-detect current location",
+            hexpand = true,
+        };
+        location_button.clicked.connect (on_auto_detect_location);
+        location_stack.add_child (location_button);
+        location_stack.add_child (location_spinner);
+        location_stack.visible_child = location_button;
+        location_detect_box.append (location_stack);
+        location_group.append (location_detect_box);
+
+        var settings_grid = new Gtk.Grid () {
+            column_spacing = 10,
+            row_spacing = 8,
+            margin_top = 5,
+        };
+
+        var latitude_label = new Gtk.Label ("Latitude:") {
+            halign = Gtk.Align.START,
+        };
+        latitude_spin = new Gtk.SpinButton.with_range (-90, 90, 0.1) {
+            value = latitude,
             digits = 2,
-            value = 0.0
         };
-        hbox_controls.append (latitude_entry);
+        latitude_spin.value_changed.connect (() => {
+            latitude = latitude_spin.value;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+        });
 
-        var year_label = new Gtk.Label ("<b>Year:</b>") {
+        var horizon_label = new Gtk.Label ("Horizon Angle:") {
             halign = Gtk.Align.START,
-            use_markup = true
         };
-        hbox_controls.append (year_label);
+        horizon_spin = new Gtk.SpinButton.with_range (-5, 5, 0.01) {
+            value = horizon_angle,
+            digits = 2,
+        };
+        horizon_spin.value_changed.connect (() => {
+            horizon_angle = horizon_spin.value;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+        });
 
-        year_entry = new Gtk.SpinButton.with_range (1, 9999, 1) {
+        settings_grid.attach (latitude_label, 0, 0, 1, 1);
+        settings_grid.attach (latitude_spin, 1, 0, 1, 1);
+        settings_grid.attach (horizon_label, 0, 1, 1, 1);
+        settings_grid.attach (horizon_spin, 1, 1, 1, 1);
+
+        location_group.append (settings_grid);
+        left_panel.append (location_group);
+
+        // Year Selection Group
+        var year_group = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+        var year_label = new Gtk.Label ("<b>Year Selection</b>") {
+            use_markup = true,
+            halign = Gtk.Align.START,
+        };
+        year_spin = new Gtk.SpinButton.with_range (1, 9999, 1) {
+            value = selected_year,
             digits = 0,
-            value = current_year
         };
-        hbox_controls.append (year_entry);
-
-        // Add value change listeners for automatic plot updates
-        latitude_entry.value_changed.connect (() => {
+        year_spin.value_changed.connect (() => {
+            selected_year = (int) year_spin.value;
             update_plot_data ();
             drawing_area.queue_draw ();
         });
+        year_group.append (year_label);
+        year_group.append (year_spin);
+        left_panel.append (year_group);
 
-        year_entry.value_changed.connect (() => {
-            update_plot_data ();
-            drawing_area.queue_draw ();
-        });
+        // Export Group
+        var export_group = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+        var export_label = new Gtk.Label ("<b>Export</b>") {
+            use_markup = true,
+            halign = Gtk.Align.START,
+        };
 
-        // Export image button
-        export_button = new Gtk.Button.with_label ("Export");
-        hbox_controls.append (export_button);
-        export_button.clicked.connect (() => {
-            var png_filter = new Gtk.FileFilter ();
-            png_filter.name = "PNG Images";
-            png_filter.add_mime_type ("image/png");
-            
-            var svg_filter = new Gtk.FileFilter ();
-            svg_filter.name = "SVG Images";
-            svg_filter.add_mime_type ("image/svg+xml");
+        var export_buttons_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 5) {
+            homogeneous = true,
+        };
 
-            var pdf_filter = new Gtk.FileFilter ();
-            pdf_filter.name = "PDF Documents";
-            pdf_filter.add_mime_type ("application/pdf");
+        var export_image_button = new Gtk.Button.with_label ("Export Image");
+        export_image_button.clicked.connect (on_export_image_clicked);
 
-            // FileDialog.filters are required to contain default filter and others
-            var filter_list = new ListStore (typeof (Gtk.FileFilter));
-            filter_list.append (png_filter);
-            filter_list.append (svg_filter);
-            filter_list.append (pdf_filter);
+        var export_csv_button = new Gtk.Button.with_label ("Export CSV");
+        export_csv_button.clicked.connect (on_export_csv_clicked);
 
-            var file_dialog = new Gtk.FileDialog () {
-                modal = true,
-                initial_name = "daylength_plot.png",
-                filters = filter_list
-            };
+        export_buttons_box.append (export_image_button);
+        export_buttons_box.append (export_csv_button);
 
-            file_dialog.save.begin (this, null, (obj, res) => {
-                try {
-                    var file = file_dialog.save.end (res);
-                    if (file != null) {
-                        string filepath = file.get_path ();
-                        export_plot (filepath);
-                    }
-                } catch (Error e) {
-                    // Usually due to the user canceling the dialog
-                    message ("File has not been saved: %s", e.message);
-                }
-            });
-        });
+        export_group.append (export_label);
+        export_group.append (export_buttons_box);
+        left_panel.append (export_group);
 
-        // Drawing area: using Gtk.DrawingArea and Cairo for plotting
+        // Click Info Group
+        var click_info_group = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+        var click_info_title = new Gtk.Label ("<b>Selected Day</b>") {
+            use_markup = true,
+            halign = Gtk.Align.START,
+        };
+        click_info_label = new Gtk.Label ("Click on chart to view data\n") {
+            halign = Gtk.Align.START,
+            margin_start = 12,
+            margin_end = 12,
+            margin_top = 6,
+            margin_bottom = 6,
+            wrap = true,
+        };
+        click_info_group.append (click_info_title);
+        click_info_group.append (click_info_label);
+        left_panel.append (click_info_group);
+
         drawing_area = new Gtk.DrawingArea () {
             hexpand = true,
-            vexpand = true
+            vexpand = true,
+            width_request = 600,
+            height_request = 500,
         };
-        drawing_area.set_size_request (400, 400);
-        drawing_area.set_draw_func (this.draw_plot);
-        vbox_main.append (drawing_area);
+        drawing_area.set_draw_func (draw_day_length_chart);
+
+        // Add click event controller
+        var click_controller = new Gtk.GestureClick ();
+        click_controller.pressed.connect (on_chart_clicked);
+        drawing_area.add_controller (click_controller);
+
+        main_box.append (left_panel);
+        main_box.append (drawing_area);
+
+        update_plot_data ();
+
+        window.child = main_box;
+        window.present ();
     }
 
     /**
-     * Updates plot data based on input values.
+     * Returns the number of days in a given year.
+     */
+    private inline int days_in_year (int year) {
+        if ((year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))) {
+            return 366;
+        }
+        return 365;
+    }
+
+    /**
+     * Calculates day length using simplified astronomical formula.
+     * 
+     * This method uses the solar declination angle and hour angle formula
+     * to directly calculate day length without iteration.
+     * 
+     * @param latitude_rad Latitude in radians.
+     * @param day_of_year Day of the year (1-365/366).
+     * @param year The year.
+     * @param horizon_angle_deg Horizon angle correction in degrees (default -0.83° for atmospheric refraction).
+     * @return Day length in hours.
+     */
+    private double calculate_day_length_simplified (double latitude_rad, int day_of_year, int year, double horizon_angle_deg = -0.83) {
+        double days_in_year_val = days_in_year (year);
+        
+        // Calculate fractional year in radians
+        double gamma_rad = (2.0 * Math.PI / days_in_year_val) * (day_of_year - 1);
+        
+        // Solar declination using NOAA formula (radians)
+        double decl_rad = 0.006918
+            - 0.399912 * Math.cos (gamma_rad)
+            + 0.070257 * Math.sin (gamma_rad)
+            - 0.006758 * Math.cos (2.0 * gamma_rad)
+            + 0.000907 * Math.sin (2.0 * gamma_rad)
+            - 0.002697 * Math.cos (3.0 * gamma_rad)
+            + 0.001480 * Math.sin (3.0 * gamma_rad);
+        
+        // Convert horizon angle to radians
+        double horizon_angle_rad = horizon_angle_deg * DEG2RAD;
+        
+        // Calculate hour angle at sunrise/sunset with horizon correction
+        // cos(hour_angle) = (sin(horizon_angle) - sin(latitude) * sin(declination)) / (cos(latitude) * cos(declination))
+        double cos_hour_angle = (Math.sin (horizon_angle_rad) - Math.sin (latitude_rad) * Math.sin (decl_rad)) 
+                              / (Math.cos (latitude_rad) * Math.cos (decl_rad));
+        
+        if (cos_hour_angle.is_nan ()) {
+            // Invalid value, return 12.0 hours
+            return 12.0;
+        } else if (cos_hour_angle > 1.0) {
+            // Polar night (sun never rises)
+            return 0.0;
+        } else if (cos_hour_angle < -1.0) {
+            // Polar day (sun never sets)
+            return 24.0;
+        }
+        
+        // Hour angle in radians
+        double hour_angle_rad = Math.acos (cos_hour_angle);
+        
+        // Day length in hours (hour angle is in radians, convert to hours)
+        // Sunrise to sunset is 2 * hour_angle, and there are 24 hours / (2*π radians)
+        return (2.0 * hour_angle_rad * 24.0) / (2.0 * Math.PI);
+    }
+
+    /**
+     * Updates plot data for all days in the selected year.
      */
     private void update_plot_data () {
-        latitude_deg = latitude_entry.value;
-        current_year = (int) year_entry.value;
-        // Convert input latitude (in degrees) to radians
-        double latitude_rad = Math.PI / 180.0 * latitude_deg;
-        day_lengths = generate_day_lengths (latitude_rad, current_year);
+        int total_days = days_in_year (selected_year);
+        day_lengths = new double[total_days];
+        
+        double latitude_rad = latitude * DEG2RAD;
+
+        for (int day = 1; day <= total_days; day += 1) {
+            day_lengths[day - 1] = calculate_day_length_simplified (
+                latitude_rad, day, selected_year, horizon_angle
+            );
+        }
+
+        // Clear click point when data updates
+        has_click_point = false;
+        click_info_label.label = "Click on chart to view data\n";
     }
 
     /**
-     * Drawing callback to render the day length plot.
-     *
-     * @param area The drawing area widget.
-     * @param cr The Cairo context.
-     * @param width The width of the drawing area.
-     * @param height The height of the drawing area.
+     * Handles auto-detect location button click.
      */
-    private void draw_plot (Gtk.DrawingArea area, Cairo.Context cr, int width, int height) {
-        // Clear background to white
-        cr.set_source_rgb (1, 1, 1);
+    private void on_auto_detect_location () {
+        location_button.sensitive = false;
+        location_stack.visible_child = location_spinner;
+        location_spinner.start ();
+
+        get_location_async.begin ((obj, res) => {
+            try {
+                get_location_async.end (res);
+            } catch (Error e) {
+                show_error_dialog ("Location Detection Failed", e.message);
+            }
+
+            location_button.sensitive = true;
+            location_spinner.stop ();
+            location_stack.visible_child = location_button;
+        });
+    }
+
+    /**
+     * Asynchronously gets current location using IP geolocation service.
+     */
+    private async void get_location_async () throws IOError {
+        var file = File.new_for_uri ("https://ipapi.co/json/");
+        var parser = new Json.Parser ();
+
+        var cancellable = new Cancellable ();
+        var timeout_id = Timeout.add_seconds_once (5, () => {
+            cancellable.cancel ();
+        });
+
+        try {
+            var stream = yield file.read_async (Priority.DEFAULT, cancellable);
+            yield parser.load_from_stream_async (stream, cancellable);
+        } catch (Error e) {
+            throw new IOError.FAILED ("Failed to get location: %s", e.message);
+        } finally {
+            if (!cancellable.is_cancelled ()) {
+                Source.remove (timeout_id);
+            }
+        }
+
+        var root_object = parser.get_root ().get_object ();
+        if (root_object.get_boolean_member_with_default ("error", false)) {
+            throw new IOError.FAILED ("Location service error: %s", 
+                root_object.get_string_member_with_default ("reason", "Unknown error"));
+        }
+
+        if (root_object.has_member ("latitude")) {
+            latitude = root_object.get_double_member ("latitude");
+        } else {
+            throw new IOError.FAILED ("No latitude found in the response");
+        }
+
+        latitude_spin.value = latitude;
+        update_plot_data ();
+        drawing_area.queue_draw ();
+    }
+
+    /**
+     * Shows an error dialog.
+     */
+    private void show_error_dialog (string title, string error_message) {
+        var dialog = new Gtk.AlertDialog (
+            "%s: %s",
+            title,
+            error_message
+        );
+        dialog.show (window);
+        message ("%s: %s", title, error_message);
+    }
+
+    /**
+     * Handles mouse click events on the chart.
+     */
+    private void on_chart_clicked (int n_press, double x, double y) {
+        int width = drawing_area.get_width ();
+        int height = drawing_area.get_height ();
+        int chart_width = width - MARGIN_LEFT - MARGIN_RIGHT;
+        int total_days = day_lengths.length;
+
+        if (x >= MARGIN_LEFT && x <= width - MARGIN_RIGHT && 
+            y >= MARGIN_TOP && y <= height - MARGIN_BOTTOM && n_press == 1) {
+            
+            double fraction = (x - MARGIN_LEFT) / chart_width;
+            clicked_day = (int) (fraction * (total_days - 1));
+            clicked_day = clicked_day.clamp (0, total_days - 1);
+            has_click_point = true;
+
+            // Get date for this day
+            var date = new DateTime (new TimeZone.local (), selected_year, 1, 1, 0, 0, 0).add_days (clicked_day);
+            string date_str = date.format ("%B %d");
+            
+            string info_text = "Date: %s (Day %d)\nDay Length: %.2f hours".printf (
+                date_str, clicked_day + 1, day_lengths[clicked_day]
+            );
+
+            click_info_label.label = info_text;
+            drawing_area.queue_draw ();
+        } else {
+            has_click_point = false;
+            click_info_label.label = "Click on chart to view data";
+            drawing_area.queue_draw ();
+        }
+    }
+
+    /**
+     * Draws the day length chart.
+     */
+    private void draw_day_length_chart (Gtk.DrawingArea area, Cairo.Context cr, int width, int height) {
+        // Light theme colors
+        double bg_r = 1.0, bg_g = 1.0, bg_b = 1.0;
+        double grid_r = 0.5, grid_g = 0.5, grid_b = 0.5, grid_a = 0.5;
+        double axis_r = 0.0, axis_g = 0.0, axis_b = 0.0;
+        double text_r = 0.0, text_g = 0.0, text_b = 0.0;
+        double curve_r = 1.0, curve_g = 0.5, curve_b = 0.0;
+        double point_r = 0.0, point_g = 0.0, point_b = 1.0;
+        double line_r = 0.0, line_g = 0.0, line_b = 1.0, line_a = 0.5;
+
+        // Fill background
+        cr.set_source_rgb (bg_r, bg_g, bg_b);
         cr.paint ();
 
-        // Set margins
-        int margin_left = 75;
-        int margin_right = 20;
-        int margin_top = 50;
-        int margin_bottom = 70;
-        int plot_width = width - margin_left - margin_right;
-        int plot_height = height - margin_top - margin_bottom;
+        int chart_width = width - MARGIN_LEFT - MARGIN_RIGHT;
+        int chart_height = height - MARGIN_TOP - MARGIN_BOTTOM;
+        int total_days = day_lengths.length;
 
-        // Fixed Y axis range: -0.5 to 24.5
         double y_min = -0.5, y_max = 24.5;
-        // X axis range: 1 to total_days
-        int total_days = (day_lengths != null) ? day_lengths.length : 365;
 
-        // Draw grid lines (gray)
-        cr.set_source_rgba (0.5, 0.5, 0.5, 0.5);
+        // Draw grid lines
+        cr.set_source_rgba (grid_r, grid_g, grid_b, grid_a);
         cr.set_line_width (1.0);
-        // Horizontal grid lines (every 3 hours)
+        
+        // Horizontal grid (every 3 hours)
         for (int tick = 0; tick <= 24; tick += 3) {
-            double y_val = margin_top + (plot_height * (1 - (tick - y_min) / (y_max - y_min)));
-            cr.move_to (margin_left, y_val);
-            cr.line_to (width - margin_right, y_val);
+            double y_val = MARGIN_TOP + (chart_height * (1 - (tick - y_min) / (y_max - y_min)));
+            cr.move_to (MARGIN_LEFT, y_val);
+            cr.line_to (width - MARGIN_RIGHT, y_val);
             cr.stroke ();
         }
-        // Vertical grid lines (start of each month)
+        
+        // Vertical grid (start of each month)
         for (int month = 1; month <= 12; month += 1) {
-            DateTime month_start = new DateTime (new TimeZone.local (), current_year, month, 1, 0, 0, 0);
+            var month_start = new DateTime (new TimeZone.local (), selected_year, month, 1, 0, 0, 0);
             int day_num = month_start.get_day_of_year ();
-            double x_pos = margin_left + (plot_width * ((double) (day_num - 1) / (total_days - 1)));
-            cr.move_to (x_pos, margin_top);
-            cr.line_to (x_pos, height - margin_bottom);
+            double x_pos = MARGIN_LEFT + (chart_width * ((double) (day_num - 1) / (total_days - 1)));
+            cr.move_to (x_pos, MARGIN_TOP);
+            cr.line_to (x_pos, height - MARGIN_BOTTOM);
             cr.stroke ();
         }
 
-        // Draw axes (black, bold)
-        cr.set_source_rgb (0, 0, 0);
+        // Draw axes
+        cr.set_source_rgb (axis_r, axis_g, axis_b);
         cr.set_line_width (2.0);
-        // X axis
-        cr.move_to (margin_left, height - margin_bottom);
-        cr.line_to (width - margin_right, height - margin_bottom);
+        cr.move_to (MARGIN_LEFT, height - MARGIN_BOTTOM);
+        cr.line_to (width - MARGIN_RIGHT, height - MARGIN_BOTTOM);
         cr.stroke ();
-        // Y axis
-        cr.move_to (margin_left, margin_top);
-        cr.line_to (margin_left, height - margin_bottom);
+        cr.move_to (MARGIN_LEFT, MARGIN_TOP);
+        cr.line_to (MARGIN_LEFT, height - MARGIN_BOTTOM);
         cr.stroke ();
 
-        // Draw Y axis ticks
+        // Draw Y axis ticks and labels
+        cr.set_source_rgb (text_r, text_g, text_b);
         cr.set_line_width (1.0);
+        cr.set_font_size (20);
         for (int tick = 0; tick <= 24; tick += 3) {
-            double y_val = margin_top + (plot_height * (1 - (tick - y_min) / (y_max - y_min)));
-            cr.move_to (margin_left - 5, y_val);
-            cr.line_to (margin_left, y_val);
+            double y_val = MARGIN_TOP + (chart_height * (1 - (tick - y_min) / (y_max - y_min)));
+            cr.move_to (MARGIN_LEFT - 5, y_val);
+            cr.line_to (MARGIN_LEFT, y_val);
             cr.stroke ();
-            // Draw tick labels
-            cr.set_font_size (22);
-            Cairo.TextExtents ext;
-            cr.text_extents (tick.to_string (), out ext);
-            cr.move_to (margin_left - 10 - ext.width, y_val + ext.height / 2);
-            cr.show_text (tick.to_string ());
+            
+            var te = Cairo.TextExtents ();
+            var txt = tick.to_string ();
+            cr.text_extents (txt, out te);
+            cr.move_to (MARGIN_LEFT - 10 - te.width, y_val + te.height / 2);
+            cr.show_text (txt);
         }
 
-        // Draw X axis ticks (start of each month)
+        // Draw X axis ticks and labels (months)
         for (int month = 1; month <= 12; month += 1) {
-            // Use GLib.DateTime to construct the 1st of each month
-            DateTime month_start = new DateTime (new TimeZone.local (), current_year, month, 1, 0, 0, 0);
+            var month_start = new DateTime (new TimeZone.local (), selected_year, month, 1, 0, 0, 0);
             int day_num = month_start.get_day_of_year ();
-            double x_pos = margin_left + (plot_width * ((double) (day_num - 1) / (total_days - 1)));
-            cr.move_to (x_pos, height - margin_bottom);
-            cr.line_to (x_pos, height - margin_bottom + 5);
+            double x_pos = MARGIN_LEFT + (chart_width * ((double) (day_num - 1) / (total_days - 1)));
+            cr.move_to (x_pos, height - MARGIN_BOTTOM);
+            cr.line_to (x_pos, height - MARGIN_BOTTOM + 5);
             cr.stroke ();
-            // Draw month labels
+            
             string label = month.to_string ();
-            cr.set_font_size (22);
-            Cairo.TextExtents ext;
-            cr.text_extents (label, out ext);
-            cr.move_to (x_pos - ext.width / 2, height - margin_bottom + 20);
+            var te = Cairo.TextExtents ();
+            cr.text_extents (label, out te);
+            cr.move_to (x_pos - te.width / 2, height - MARGIN_BOTTOM + 25);
             cr.show_text (label);
         }
 
-        // Draw X and Y axis titles
-        cr.set_source_rgb (0, 0, 0);
-        cr.set_font_size (22);
-
-        // X axis title
+        // Draw axis titles
         string x_title = "Date (Month)";
-        Cairo.TextExtents x_ext;
-        cr.text_extents (x_title, out x_ext);
-        cr.move_to ((double) width / 2 - x_ext.width / 2, height - margin_bottom + 50);
+        var x_te = Cairo.TextExtents ();
+        cr.text_extents (x_title, out x_te);
+        cr.move_to ((double) width / 2 - x_te.width / 2, height - MARGIN_BOTTOM + 50);
         cr.show_text (x_title);
 
-        // Y axis title
         string y_title = "Day Length (hours)";
-        Cairo.TextExtents y_ext;
-        cr.text_extents (y_title, out y_ext);
+        var y_te = Cairo.TextExtents ();
+        cr.text_extents (y_title, out y_te);
         cr.save ();
-        // Position 45 pixels to the left of Y axis, vertically centered
-        cr.translate (margin_left - 45, (double) height / 2);
-        // Rotate -90 degrees (π/2) for vertical text
+        cr.translate (MARGIN_LEFT - 45, (double) height / 2);
         cr.rotate (-Math.PI / 2);
-        // Adjust text position for vertical centering
-        cr.move_to (-y_ext.width / 2, 0);
+        cr.move_to (-y_te.width / 2, 0);
         cr.show_text (y_title);
         cr.restore ();
 
-        if (day_lengths == null) {
-            // Initialize day_lengths if not set
-            update_plot_data ();
-        }
-
-        // Add caption below the X axis title for clarity and aesthetics
-        string caption = "Day Length - Latitude: %.2f°, Year: %d".printf (latitude_deg, current_year);
-        cr.set_font_size (22);
-        Cairo.TextExtents cap_ext;
-        cr.text_extents (caption, out cap_ext);
-        cr.move_to ((width - cap_ext.width) / 2, (double) margin_top / 2);
+        // Draw caption
+        string caption = "Day Length - Latitude: %.2f°, Year: %d, Horizon: %.2f°".printf (
+            latitude, selected_year, horizon_angle
+        );
+        cr.set_font_size (18);
+        var cap_te = Cairo.TextExtents ();
+        cr.text_extents (caption, out cap_te);
+        cr.move_to ((width - cap_te.width) / 2, (double) MARGIN_TOP / 2);
         cr.show_text (caption);
 
-        // Draw data curve (red, bold)
-        cr.set_source_rgb (1, 0, 0);
+        // Draw data curve
+        cr.set_source_rgb (curve_r, curve_g, curve_b);
         cr.set_line_width (2.5);
         for (int i = 0; i < total_days; i += 1) {
-            double x = margin_left + (plot_width * ((double) i / (total_days - 1)));
-            double y = margin_top + (plot_height * (1 - (day_lengths[i] - y_min) / (y_max - y_min)));
+            double x = MARGIN_LEFT + (chart_width * ((double) i / (total_days - 1)));
+            double y = MARGIN_TOP + (chart_height * (1 - (day_lengths[i] - y_min) / (y_max - y_min)));
             if (i == 0) {
                 cr.move_to (x, y);
             } else {
@@ -376,18 +535,74 @@ public class DayLengthWindow : Gtk.ApplicationWindow {
             }
         }
         cr.stroke ();
+
+        // Draw clicked point if exists
+        if (has_click_point && clicked_day >= 0 && clicked_day < total_days) {
+            double x = MARGIN_LEFT + (chart_width * ((double) clicked_day / (total_days - 1)));
+            double y = MARGIN_TOP + (chart_height * (1 - (day_lengths[clicked_day] - y_min) / (y_max - y_min)));
+
+            // Draw vertical guide line
+            cr.set_source_rgba (line_r, line_g, line_b, line_a);
+            cr.set_line_width (1.5);
+            cr.move_to (x, MARGIN_TOP);
+            cr.line_to (x, height - MARGIN_BOTTOM);
+            cr.stroke ();
+
+            // Draw horizontal guide line
+            cr.move_to (MARGIN_LEFT, y);
+            cr.line_to (width - MARGIN_RIGHT, y);
+            cr.stroke ();
+
+            // Draw point
+            cr.set_source_rgb (point_r, point_g, point_b);
+            cr.arc (x, y, 5, 0, 2 * Math.PI);
+            cr.fill ();
+        }
     }
 
     /**
-     * Exports the current day length plot to an image file (PNG or SVG).
-     *
-     * This function gets the current width and height of the drawing area.
-     * If invalid, it defaults to 800x600.
-     * It then creates a Cairo surface (SVG or PNG) and draws the plot onto it.
-     *
-     * @param filepath The destination file path.
+     * Handles export image button click.
      */
-    private void export_plot (string filepath) {
+    private void on_export_image_clicked () {
+        var png_filter = new Gtk.FileFilter ();
+        png_filter.name = "PNG Images";
+        png_filter.add_mime_type ("image/png");
+        
+        var svg_filter = new Gtk.FileFilter ();
+        svg_filter.name = "SVG Images";
+        svg_filter.add_mime_type ("image/svg+xml");
+
+        var pdf_filter = new Gtk.FileFilter ();
+        pdf_filter.name = "PDF Documents";
+        pdf_filter.add_mime_type ("application/pdf");
+
+        var filter_list = new ListStore (typeof (Gtk.FileFilter));
+        filter_list.append (png_filter);
+        filter_list.append (svg_filter);
+        filter_list.append (pdf_filter);
+
+        var file_dialog = new Gtk.FileDialog () {
+            modal = true,
+            initial_name = "daylength_plot.png",
+            filters = filter_list
+        };
+
+        file_dialog.save.begin (window, null, (obj, res) => {
+            try {
+                var file = file_dialog.save.end (res);
+                if (file != null) {
+                    export_plot_image (file.get_path ());
+                }
+            } catch (Error e) {
+                message ("File has not been saved: %s", e.message);
+            }
+        });
+    }
+
+    /**
+     * Exports the plot to an image file.
+     */
+    private void export_plot_image (string filepath) {
         int width = drawing_area.get_width ();
         int height = drawing_area.get_height ();
 
@@ -403,51 +618,78 @@ public class DayLengthWindow : Gtk.ApplicationWindow {
         }
 
         if (extension == ".svg") {
-            Cairo.SvgSurface surface = new Cairo.SvgSurface (filepath, width, height);
-            Cairo.Context cr = new Cairo.Context (surface);
-            draw_plot (drawing_area, cr, width, height);
+            var surface = new Cairo.SvgSurface (filepath, width, height);
+            var cr = new Cairo.Context (surface);
+            draw_day_length_chart (drawing_area, cr, width, height);
         } else if (extension == ".pdf") {
-            Cairo.PdfSurface surface = new Cairo.PdfSurface (filepath, width, height);
-            Cairo.Context cr = new Cairo.Context (surface);
-            draw_plot (drawing_area, cr, width, height);
+            var surface = new Cairo.PdfSurface (filepath, width, height);
+            var cr = new Cairo.Context (surface);
+            draw_day_length_chart (drawing_area, cr, width, height);
         } else {
-            Cairo.ImageSurface surface = new Cairo.ImageSurface (Cairo.Format.RGB24, width, height);
-            Cairo.Context cr = new Cairo.Context (surface);
-            draw_plot (drawing_area, cr, width, height);
+            var surface = new Cairo.ImageSurface (Cairo.Format.RGB24, width, height);
+            var cr = new Cairo.Context (surface);
+            draw_day_length_chart (drawing_area, cr, width, height);
             surface.write_to_png (filepath);
+        }
+    }
+
+    /**
+     * Handles export CSV button click.
+     */
+    private void on_export_csv_clicked () {
+        var csv_filter = new Gtk.FileFilter ();
+        csv_filter.name = "CSV Files";
+        csv_filter.add_mime_type ("text/csv");
+
+        var filter_list = new ListStore (typeof (Gtk.FileFilter));
+        filter_list.append (csv_filter);
+
+        var file_dialog = new Gtk.FileDialog () {
+            modal = true,
+            initial_name = "daylength_data.csv",
+            filters = filter_list
+        };
+
+        file_dialog.save.begin (window, null, (obj, res) => {
+            try {
+                var file = file_dialog.save.end (res);
+                if (file != null) {
+                    export_csv (file.get_path ());
+                }
+            } catch (Error e) {
+                message ("File has not been saved: %s", e.message);
+            }
+        });
+    }
+
+    /**
+     * Exports data to a CSV file.
+     */
+    private void export_csv (string filepath) {
+        try {
+            var file = File.new_for_path (filepath);
+            var stream = file.replace (null, false, FileCreateFlags.NONE);
+            var data_stream = new DataOutputStream (stream);
+
+            // Write header
+            data_stream.put_string ("Day of Year,Date,Day Length (hours)\n");
+
+            // Write data
+            for (int i = 0; i < day_lengths.length; i += 1) {
+                var date = new DateTime (new TimeZone.local (), selected_year, 1, 1, 0, 0, 0).add_days (i);
+                string date_str = date.format ("%Y-%m-%d");
+                data_stream.put_string ("%d,%s,%.6f\n".printf (i + 1, date_str, day_lengths[i]));
+            }
+
+            data_stream.close ();
+        } catch (Error e) {
+            show_error_dialog ("Export Failed", e.message);
         }
     }
 }
 
 /**
- * Main application class for Day Length Plotter.
- */
-public class DayLengthApp : Gtk.Application {
-
-    /**
-     * Constructs a new DayLengthApp.
-     */
-    public DayLengthApp () {
-        Object (
-            application_id: "com.github.wszqkzqk.DayLengthApp",
-            flags: ApplicationFlags.DEFAULT_FLAGS
-        );
-    }
-
-    /**
-     * Activates the application.
-     */
-    protected override void activate () {
-        var win = new DayLengthWindow (this);
-        win.present ();
-    }
-}
-
-/**
  * Main entry point.
- *
- * @param args Command line arguments.
- * @return Exit status code.
  */
 public static int main (string[] args) {
     var app = new DayLengthApp ();
