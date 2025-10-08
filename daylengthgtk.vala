@@ -693,7 +693,6 @@ public class DayLengthApp : Gtk.Application {
             // Write header
             data_stream.put_string ("# Day Length Data\n");
             data_stream.put_string ("# Latitude: %.2f degrees\n".printf (latitude));
-            data_stream.put_string ("# Year: %d\n".printf (selected_year));
             data_stream.put_string ("# Horizon Angle: %.2f degrees\n".printf (horizon_angle));
             data_stream.put_string ("#\n");
             // Write data
