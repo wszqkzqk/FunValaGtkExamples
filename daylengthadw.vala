@@ -752,7 +752,11 @@ public class DayLengthApp : Adw.Application {
             var data_stream = new DataOutputStream (stream);
 
             // Write header
-            data_stream.put_string ("Day of Year,Date,Day Length (hours)\n");
+            data_stream.put_string ("# Day Length Data\n");
+            data_stream.put_string ("# Latitude: %.2f degrees\n".printf (latitude));
+            data_stream.put_string ("# Year: %d\n".printf (selected_year));
+            data_stream.put_string ("# Horizon Angle: %.2f degrees\n".printf (horizon_angle));
+            data_stream.put_string ("#\n");
 
             // Write data
             for (int i = 0; i < day_lengths.length; i += 1) {
