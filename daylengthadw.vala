@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 /**
- * Day Length Calculator Application with Simplified Solar Formula.
+ * Day Length Calculator Application.
  * Copyright (C) 2025 wszqkzqk <wszqkzqk@qq.com>
  * 
  * A libadwaita application that calculates and visualizes day length

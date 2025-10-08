@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 /**
- * Day Length Calculator CLI with Auto-Detection and Horizon Correction.
+ * Day Length Calculator CLI with Horizon Correction.
  * Copyright (C) 2025 wszqkzqk <wszqkzqk@qq.com>
  * 
  * A command-line tool that calculates day length using astronomical formulas
