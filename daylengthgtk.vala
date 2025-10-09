@@ -243,55 +243,44 @@ public class DayLengthApp : Gtk.Application {
         double base_days_cb = base_days_sq * base_days_from_epoch;
         double obliquity_deg = 23.439291111 - 3.560347e-7 * base_days_from_epoch - 1.2285e-16 * base_days_sq + 1.0335e-20 * base_days_cb;
         double obliquity_sin = Math.sin (obliquity_deg * DEG2RAD);
-        // Mean anomaly of the sun (degrees) with higher-order terms
-        double days_from_epoch_sq = base_days_from_epoch * base_days_from_epoch;
-        double days_from_epoch_cb = days_from_epoch_sq * base_days_from_epoch;
-        double mean_anomaly_deg = 357.52910 + 0.985600282 * base_days_from_epoch - 1.1686e-13 * days_from_epoch_sq - 9.85e-21 * days_from_epoch_cb;
+        double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
+        double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
+        const double ecliptic_c3 = 0.000290;
+        double mean_anomaly_deg = 357.52910 + 0.985600282 * base_days_from_epoch - 1.1686e-13 * base_days_sq - 9.85e-21 * base_days_cb;
         mean_anomaly_deg = Math.fmod (mean_anomaly_deg, 360.0);
         if (mean_anomaly_deg < 0) {
             mean_anomaly_deg += 360.0;
         }
-        // Mean longitude of the sun (degrees) with higher-order terms
-        double mean_longitude_deg = 280.46645 + 0.98564736 * base_days_from_epoch + 2.2727e-13 * days_from_epoch_sq;
+        double mean_longitude_deg = 280.46645 + 0.98564736 * base_days_from_epoch + 2.2727e-13 * base_days_sq;
         mean_longitude_deg = Math.fmod (mean_longitude_deg, 360.0);
         if (mean_longitude_deg < 0) {
             mean_longitude_deg += 360.0;
         }
-        // Ecliptic longitude corrections
-        double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
-        double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
-        double ecliptic_c3 = 0.000290;
-        // Ecliptic longitude of the sun (degrees) with higher-order corrections
         double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
-        double ecliptic_longitude_deg = mean_longitude_deg + ecliptic_c1 * Math.sin (mean_anomaly_rad) + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad) + ecliptic_c3 * Math.sin (3.0 * mean_anomaly_rad);
+        double ecliptic_longitude_deg = mean_longitude_deg
+            + ecliptic_c1 * Math.sin (mean_anomaly_rad)
+            + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
+            + ecliptic_c3 * Math.sin (3.0 * mean_anomaly_rad);
         ecliptic_longitude_deg = Math.fmod (ecliptic_longitude_deg, 360.0);
         if (ecliptic_longitude_deg < 0) {
             ecliptic_longitude_deg += 360.0;
         }
-        // Solar declination (radians)
         double ecliptic_longitude_rad = ecliptic_longitude_deg * DEG2RAD;
         double ecliptic_longitude_sin = Math.sin (ecliptic_longitude_rad);
         double declination_sin = (obliquity_sin * ecliptic_longitude_sin).clamp (-1.0, 1.0);
-        double declination_rad = Math.asin (declination_sin.clamp (-1.0, 1.0));
-        // Convert horizon angle to radians
-        double horizon_angle_rad = horizon_angle_deg * DEG2RAD; 
-        // Calculate hour angle at sunrise/sunset with horizon correction
-        double cos_hour_angle = (Math.sin (horizon_angle_rad) - sin_lat * declination_sin) 
-            / (cos_lat * Math.cos (declination_rad));
-        if (cos_hour_angle.is_nan ()) {
-            // Invalid value, return 12.0 hours
-            return 12.0;
+        double declination_cos = Math.sqrt (1.0 - declination_sin * declination_sin); // More efficient than asin/cos
+        double horizon_angle_rad = horizon_angle_deg * DEG2RAD;
+        double cos_hour_angle = (Math.sin (horizon_angle_rad) - sin_lat * declination_sin) / (cos_lat * declination_cos);
+        // Handle polar day/night cases
+        if (cos_hour_angle.is_nan()) {
+            return 12.0; // Fallback
         } else if (cos_hour_angle >= 1.0) {
-            // Polar night (sun never rises)
-            return 0.0;
+            return 0.0; // Polar night
         } else if (cos_hour_angle <= -1.0) {
-            // Polar day (sun never sets)
-            return 24.0;
+            return 24.0; // Polar day
         }
-        // Hour angle in radians
         double hour_angle_rad = Math.acos (cos_hour_angle);
-        // Day length in hours (hour angle is in radians, convert to hours)
-        return (2.0 * hour_angle_rad * 24.0) / (2.0 * Math.PI);
+        return (hour_angle_rad * 24.0) / Math.PI; // Simplified from (2 * rad * 24) / (2 * PI)
     }
 
     /**
