@@ -322,7 +322,7 @@ public class SolarAngleApp : Adw.Application {
 
     /**
      * Handles auto-detect location button click.
-     * 
+     *
      * Uses a free IP geolocation service to get current location and timezone.
      */
     private void on_auto_detect_location () {
@@ -463,7 +463,6 @@ public class SolarAngleApp : Adw.Application {
         double obliquity_cos = Math.cos (obliquity_deg * DEG2RAD);
         double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
         double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
-        const double ecliptic_c3 = 0.000290;
         double tst_offset = 4.0 * longitude_deg - 60.0 * timezone_offset_hrs;
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
             double days_from_epoch = base_days_from_epoch + (i / 60.0 - timezone_offset_hrs) / 24.0;
@@ -483,7 +482,7 @@ public class SolarAngleApp : Adw.Application {
             double ecliptic_longitude_deg = mean_longitude_deg
                 + ecliptic_c1 * Math.sin (mean_anomaly_rad)
                 + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
-                + ecliptic_c3 * Math.sin (3.0 * mean_anomaly_rad);
+                + 0.000290 * Math.sin (3.0 * mean_anomaly_rad);
             ecliptic_longitude_deg = Math.fmod (ecliptic_longitude_deg, 360.0);
             if (ecliptic_longitude_deg < 0) {
                 ecliptic_longitude_deg += 360.0;
@@ -588,7 +587,7 @@ public class SolarAngleApp : Adw.Application {
         int chart_height = height - MARGIN_TOP - MARGIN_BOTTOM;
 
         double horizon_y = MARGIN_TOP + chart_height * 0.5; // 0° is at middle of -90° to +90° range
-        
+
         // Shade area below horizon
         cr.set_source_rgba (colors.shade_r, colors.shade_g, colors.shade_b, colors.shade_a);
         cr.rectangle (MARGIN_LEFT, horizon_y, chart_width, height - MARGIN_BOTTOM - horizon_y);
@@ -675,14 +674,14 @@ public class SolarAngleApp : Adw.Application {
             cr.set_source_rgba (colors.point_r, colors.point_g, colors.point_b, 0.8);
             cr.arc (clicked_x, corresponding_y, 5, 0, 2 * Math.PI);
             cr.fill ();
-            
+
             // Draw vertical line to show time
             cr.set_source_rgba (colors.line_r, colors.line_g, colors.line_b, colors.line_a);
             cr.set_line_width (1);
             cr.move_to (clicked_x, MARGIN_TOP);
             cr.line_to (clicked_x, height - MARGIN_BOTTOM);
             cr.stroke ();
-            
+
             // Draw horizontal line to show angle
             cr.move_to (MARGIN_LEFT, corresponding_y);
             cr.line_to (width - MARGIN_RIGHT, corresponding_y);
@@ -710,7 +709,7 @@ public class SolarAngleApp : Adw.Application {
         // Draw chart captions
         string caption_line1 = "Solar Elevation Angle - Date: %s".printf (selected_date.format ("%Y-%m-%d"));
         string caption_line2 = "Lat: %.2f°, Lon: %.2f°, TZ: UTC%+.2f".printf (latitude, longitude, timezone_offset_hours);
-        
+
         cr.set_font_size (18);
         Cairo.TextExtents cap_ext1, cap_ext2;
         cr.text_extents (caption_line1, out cap_ext1);
@@ -734,7 +733,7 @@ public class SolarAngleApp : Adw.Application {
         var png_filter = new Gtk.FileFilter ();
         png_filter.name = "PNG Images";
         png_filter.add_mime_type ("image/png");
-        
+
         var svg_filter = new Gtk.FileFilter ();
         svg_filter.name = "SVG Images";
         svg_filter.add_mime_type ("image/svg+xml");
