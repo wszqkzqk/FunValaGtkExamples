@@ -387,7 +387,10 @@ public class DayLengthApp : Adw.Application {
      * @param sunrise_time Output parameter for sunrise time in local hours [0,24).
      * @param sunset_time Output parameter for sunset time in local hours [0,24).
      */
-    private void calculate_day_length (double latitude_rad, double longitude_deg, double timezone_offset_hrs, double julian_date, double horizon_angle_deg, out double day_length, out double sunrise_time, out double sunset_time) {
+    private void calculate_day_length (
+        double latitude_rad, double longitude_deg, double timezone_offset_hrs, double julian_date, double horizon_angle_deg,
+        out double day_length, out double sunrise_time, out double sunset_time
+    ) {
         double sin_lat = Math.sin (latitude_rad);
         double cos_lat = Math.cos (latitude_rad);
         double sin_horizon = Math.sin (horizon_angle_deg * DEG2RAD);

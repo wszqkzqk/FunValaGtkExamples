@@ -19,9 +19,13 @@ public class DayLengthApp : Gtk.Application {
 
     // Model / persistent state
     private double latitude = 0.0;
+    private double longitude = 0.0;
+    private double timezone_offset_hours = 0.0;
     private int selected_year;
     private double horizon_angle = -0.83; // Refraction-corrected horizon angle in degrees
     private double[] day_lengths; // Hours of daylight for each day
+    private double[] sunrise_times;
+    private double[] sunset_times; // Sunset times for each day
     private int clicked_day = -1; // Selected day on chart
     private bool has_click_point = false;
 
@@ -33,6 +37,8 @@ public class DayLengthApp : Gtk.Application {
     private Gtk.Spinner location_spinner;
     private Gtk.Button location_button;
     private Gtk.SpinButton latitude_spin;
+    private Gtk.SpinButton longitude_spin;
+    private Gtk.SpinButton timezone_spin;
     private Gtk.SpinButton year_spin;
     private Gtk.SpinButton horizon_spin;
 
@@ -111,6 +117,32 @@ public class DayLengthApp : Gtk.Application {
             drawing_area.queue_draw ();
         });
 
+        var longitude_label = new Gtk.Label ("Longitude:") {
+            halign = Gtk.Align.START,
+        };
+        longitude_spin = new Gtk.SpinButton.with_range (-180, 180, 0.1) {
+            value = longitude,
+            digits = 2,
+        };
+        longitude_spin.value_changed.connect (() => {
+            longitude = longitude_spin.value;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+        });
+
+        var timezone_label = new Gtk.Label ("Timezone:") {
+            halign = Gtk.Align.START,
+        };
+        timezone_spin = new Gtk.SpinButton.with_range (-12, 14, 0.5) {
+            value = timezone_offset_hours,
+            digits = 2,
+        };
+        timezone_spin.value_changed.connect (() => {
+            timezone_offset_hours = timezone_spin.value;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+        });
+
         var horizon_label = new Gtk.Label ("Horizon Angle:") {
             halign = Gtk.Align.START,
         };
@@ -126,8 +158,12 @@ public class DayLengthApp : Gtk.Application {
 
         settings_grid.attach (latitude_label, 0, 0, 1, 1);
         settings_grid.attach (latitude_spin, 1, 0, 1, 1);
-        settings_grid.attach (horizon_label, 0, 1, 1, 1);
-        settings_grid.attach (horizon_spin, 1, 1, 1, 1);
+        settings_grid.attach (longitude_label, 0, 1, 1, 1);
+        settings_grid.attach (longitude_spin, 1, 1, 1, 1);
+        settings_grid.attach (timezone_label, 0, 2, 1, 1);
+        settings_grid.attach (timezone_spin, 1, 2, 1, 1);
+        settings_grid.attach (horizon_label, 0, 3, 1, 1);
+        settings_grid.attach (horizon_spin, 1, 3, 1, 1);
 
         location_group.append (settings_grid);
         left_panel.append (location_group);
@@ -217,6 +253,9 @@ public class DayLengthApp : Gtk.Application {
 
     /**
      * Returns the number of days in a given year.
+     *
+     * @param year The year to query.
+     * @return The number of days in the year (365 or 366).
      */
     private inline int days_in_year (int year) {
         if ((year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))) {
@@ -226,61 +265,166 @@ public class DayLengthApp : Gtk.Application {
     }
 
     /**
+     * Computes solar parameters: declination and equation of time.
+     *
+     * @param base_days_from_epoch Days from the chosen epoch (e.g. days since J2000-like reference) at UTC midnight.
+     * @param time_local_hours Local time in hours for which to compute the parameters (e.g. 12.0 for noon).
+     * @param obliquity_sin Sine of the Earth's obliquity (precomputed).
+     * @param obliquity_cos Cosine of the Earth's obliquity (precomputed).
+     * @param ecliptic_c1 First-order ecliptic correction coefficient.
+     * @param ecliptic_c2 Second-order ecliptic correction coefficient.
+     * @param out_declination_sin (out) Receives sine of the solar declination.
+     * @param out_declination_cos (out) Receives cosine of the solar declination.
+     * @param out_eqtime_minutes (out) Receives the equation of time in minutes.
+     */
+    private static inline void compute_solar_parameters (
+        double base_days_from_epoch, double time_local_hours,
+        double obliquity_sin, double obliquity_cos,
+        double ecliptic_c1, double ecliptic_c2,
+        out double out_declination_sin, out double out_declination_cos, out double out_eqtime_minutes
+    ) {
+        double days_from_epoch = base_days_from_epoch + time_local_hours / 24.0;
+        double days_sq = days_from_epoch * days_from_epoch;
+        double days_cb = days_sq * days_from_epoch;
+
+        double mean_anomaly_deg = 357.52910 + 0.985600282 * days_from_epoch - 1.1686e-13 * days_sq - 9.85e-21 * days_cb;
+        double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
+
+        double mean_longitude_deg = Math.fmod (280.46645 + 0.98564736 * days_from_epoch + 2.2727e-13 * days_sq, 360.0);
+        if (mean_longitude_deg < 0) {
+            mean_longitude_deg += 360.0;
+        }
+
+        double ecliptic_longitude_deg = mean_longitude_deg
+            + ecliptic_c1 * Math.sin (mean_anomaly_rad)
+            + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
+            + 0.000290 * Math.sin (3.0 * mean_anomaly_rad);
+
+        double ecliptic_longitude_rad = ecliptic_longitude_deg * DEG2RAD;
+        double ecliptic_longitude_sin = Math.sin (ecliptic_longitude_rad);
+        double ecliptic_longitude_cos = Math.cos (ecliptic_longitude_rad);
+
+        out_declination_sin = (obliquity_sin * ecliptic_longitude_sin).clamp (-1.0, 1.0);
+        out_declination_cos = Math.sqrt (1.0 - out_declination_sin * out_declination_sin);
+
+        double right_ascension_rad = Math.atan2 (obliquity_cos * ecliptic_longitude_sin, ecliptic_longitude_cos);
+        double right_ascension_hours = right_ascension_rad * RAD2DEG / 15.0;
+        double mean_time_hours = mean_longitude_deg / 15.0;
+
+        double time_diff = mean_time_hours - right_ascension_hours;
+        if (time_diff > 12.0) {
+            time_diff -= 24.0;
+        } else if (time_diff < -12.0) {
+            time_diff += 24.0;
+        }
+        out_eqtime_minutes = time_diff * 60.0;
+    }
+
+    /**
      * Calculates day length using high-precision astronomical formula.
      * 
      * @param latitude_rad Latitude in radians.
+     * @param longitude_deg Longitude in degrees.
+     * @param timezone_offset_hrs Timezone offset in hours.
      * @param julian_date GLib's Julian Date for the day (from 0001-01-01).
      * @param horizon_angle_deg Horizon angle correction in degrees (default -0.83° for atmospheric refraction).
      * @return Day length in hours.
      */
-    private double calculate_day_length (double latitude_rad, double julian_date, double horizon_angle_deg = -0.83) {
+    private void calculate_day_length (
+        double latitude_rad, double longitude_deg, double timezone_offset_hrs, double julian_date, double horizon_angle_deg,
+        out double day_length, out double sunrise_time, out double sunset_time
+    ) {
         double sin_lat = Math.sin (latitude_rad);
         double cos_lat = Math.cos (latitude_rad);
-        // Base days from J2000.0 epoch (GLib's Julian Date is days since 0001-01-01)
-        double base_days_from_epoch = julian_date - 730120.5; // 2451545.0 - 1721425.0 - 0.5 for noon
-        // Pre-compute obliquity with higher-order terms (changes very slowly)
-        double base_days_sq = base_days_from_epoch * base_days_from_epoch;
-        double base_days_cb = base_days_sq * base_days_from_epoch;
-        double obliquity_deg = 23.439291111 - 3.560347e-7 * base_days_from_epoch - 1.2285e-16 * base_days_sq + 1.0335e-20 * base_days_cb;
+        double sin_horizon = Math.sin (horizon_angle_deg * DEG2RAD);
+
+        double base_days_from_epoch_utc_midnight = (julian_date - 730120.5) - timezone_offset_hrs / 24.0;
+        double base_days_sq = base_days_from_epoch_utc_midnight * base_days_from_epoch_utc_midnight;
+        double base_days_cb = base_days_sq * base_days_from_epoch_utc_midnight;
+        double obliquity_deg = 23.439291111 - 3.560347e-7 * base_days_from_epoch_utc_midnight - 1.2285e-16 * base_days_sq + 1.0335e-20 * base_days_cb;
         double obliquity_sin = Math.sin (obliquity_deg * DEG2RAD);
-        double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
-        double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
-        const double ecliptic_c3 = 0.000290;
-        double mean_anomaly_deg = 357.52910 + 0.985600282 * base_days_from_epoch - 1.1686e-13 * base_days_sq - 9.85e-21 * base_days_cb;
-        mean_anomaly_deg = Math.fmod (mean_anomaly_deg, 360.0);
-        if (mean_anomaly_deg < 0) {
-            mean_anomaly_deg += 360.0;
+        double obliquity_cos = Math.cos (obliquity_deg * DEG2RAD);
+
+        double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch_utc_midnight - 1.049e-14 * base_days_sq;
+        double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch_utc_midnight;
+
+        double tst_offset = 4.0 * longitude_deg - 60.0 * timezone_offset_hrs;
+
+        double declination_sin, declination_cos, eqtime_minutes;
+        compute_solar_parameters (
+            base_days_from_epoch_utc_midnight, 12.0,
+            obliquity_sin, obliquity_cos, ecliptic_c1, ecliptic_c2,
+            out declination_sin, out declination_cos, out eqtime_minutes
+        );
+
+        double cos_ha = (Math.sin (horizon_angle_deg * DEG2RAD) - sin_lat * declination_sin) / (cos_lat * declination_cos);
+
+        if (cos_ha >= 1.0) {
+            day_length = 0.0;
+            sunrise_time = double.NAN;
+            sunset_time = double.NAN;
+            return;
+        } else if (cos_ha <= -1.0) {
+            day_length = 24.0;
+            sunrise_time = double.NAN;
+            sunset_time = double.NAN;
+            return;
         }
-        double mean_longitude_deg = 280.46645 + 0.98564736 * base_days_from_epoch + 2.2727e-13 * base_days_sq;
-        mean_longitude_deg = Math.fmod (mean_longitude_deg, 360.0);
-        if (mean_longitude_deg < 0) {
-            mean_longitude_deg += 360.0;
+
+        double ha_deg = Math.acos (cos_ha) * RAD2DEG;
+        sunrise_time = 12.0 - ha_deg / 15.0 - (eqtime_minutes + tst_offset) / 60.0;
+        sunset_time  = 12.0 + ha_deg / 15.0 - (eqtime_minutes + tst_offset) / 60.0;
+
+        const double TOL_HOURS = 0.1 / 3600.0;
+        for (int iter = 0; iter < 5; iter += 1) {
+            double old_sr = sunrise_time;
+            double old_ss = sunset_time;
+
+            compute_solar_parameters (
+                base_days_from_epoch_utc_midnight, sunrise_time,
+                obliquity_sin, obliquity_cos, ecliptic_c1, ecliptic_c2,
+                out declination_sin, out declination_cos, out eqtime_minutes
+            );
+
+            cos_ha = (sin_horizon - sin_lat * declination_sin) / (cos_lat * declination_cos);
+            if (cos_ha >= 1.0 || cos_ha <= -1.0) {
+                break;
+            }
+
+            ha_deg = Math.acos (cos_ha) * RAD2DEG;
+            sunrise_time = 12.0 - ha_deg / 15.0 - (eqtime_minutes + tst_offset) / 60.0;
+
+            compute_solar_parameters (
+                base_days_from_epoch_utc_midnight, sunset_time,
+                obliquity_sin, obliquity_cos, ecliptic_c1, ecliptic_c2,
+                out declination_sin, out declination_cos, out eqtime_minutes
+            );
+
+            cos_ha = (sin_horizon - sin_lat * declination_sin) / (cos_lat * declination_cos);
+            if (cos_ha >= 1.0 || cos_ha <= -1.0) {
+                break;
+            }
+
+            ha_deg = Math.acos (cos_ha) * RAD2DEG;
+            sunset_time = 12.0 + ha_deg / 15.0 - (eqtime_minutes + tst_offset) / 60.0;
+
+            if (Math.fabs (sunrise_time - old_sr) < TOL_HOURS && Math.fabs (sunset_time - old_ss) < TOL_HOURS) {
+                break;
+            }
         }
-        double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
-        double ecliptic_longitude_deg = mean_longitude_deg
-            + ecliptic_c1 * Math.sin (mean_anomaly_rad)
-            + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
-            + ecliptic_c3 * Math.sin (3.0 * mean_anomaly_rad);
-        ecliptic_longitude_deg = Math.fmod (ecliptic_longitude_deg, 360.0);
-        if (ecliptic_longitude_deg < 0) {
-            ecliptic_longitude_deg += 360.0;
+
+        sunrise_time = Math.fmod (sunrise_time, 24.0);
+        if (sunrise_time < 0) {
+            sunrise_time += 24.0;
         }
-        double ecliptic_longitude_rad = ecliptic_longitude_deg * DEG2RAD;
-        double ecliptic_longitude_sin = Math.sin (ecliptic_longitude_rad);
-        double declination_sin = (obliquity_sin * ecliptic_longitude_sin).clamp (-1.0, 1.0);
-        double declination_cos = Math.sqrt (1.0 - declination_sin * declination_sin); // More efficient than asin/cos
-        double horizon_angle_rad = horizon_angle_deg * DEG2RAD;
-        double cos_hour_angle = (Math.sin (horizon_angle_rad) - sin_lat * declination_sin) / (cos_lat * declination_cos);
-        // Handle polar day/night cases
-        if (cos_hour_angle.is_nan()) {
-            return 12.0; // Fallback
-        } else if (cos_hour_angle >= 1.0) {
-            return 0.0; // Polar night
-        } else if (cos_hour_angle <= -1.0) {
-            return 24.0; // Polar day
+        sunset_time = Math.fmod (sunset_time, 24.0);
+        if (sunset_time < 0) {
+            sunset_time += 24.0;
         }
-        double hour_angle_rad = Math.acos (cos_hour_angle);
-        return (hour_angle_rad * 24.0) / Math.PI; // Simplified from (2 * rad * 24) / (2 * PI)
+        day_length = sunset_time - sunrise_time;
+        if (day_length < 0) {
+            day_length += 24.0;
+        }
     }
 
     /**
@@ -289,7 +433,9 @@ public class DayLengthApp : Gtk.Application {
     private void update_plot_data () {
         int total_days = days_in_year (selected_year);
         day_lengths = new double[total_days];
-        
+        sunrise_times = new double[total_days];
+        sunset_times = new double[total_days];
+
         double latitude_rad = latitude * DEG2RAD;
 
         // Get Julian Date for January 1st of the selected year
@@ -298,14 +444,15 @@ public class DayLengthApp : Gtk.Application {
         uint base_julian_date = date.get_julian ();
 
         for (int day = 0; day < total_days; day += 1) {
-            day_lengths[day] = calculate_day_length (
-                latitude_rad, (double) (base_julian_date + day), horizon_angle
+            calculate_day_length (
+                latitude_rad, longitude, timezone_offset_hours, (double) (base_julian_date + day), horizon_angle,
+                out day_lengths[day], out sunrise_times[day], out sunset_times[day]
             );
         }
 
         // Clear click point when data updates
         has_click_point = false;
-        click_info_label.label = "Click on chart to view data\n";
+        click_info_label.label = "Click on chart to view data\n\n";
     }
 
     /**
@@ -363,8 +510,47 @@ public class DayLengthApp : Gtk.Application {
         } else {
             throw new IOError.FAILED ("No latitude found in the response");
         }
+        if (root_object.has_member ("longitude")) {
+            longitude = root_object.get_double_member ("longitude");
+        } else {
+            throw new IOError.FAILED ("No longitude found in the response");
+        }
+
+        double network_tz_offset = 0.0;
+        bool has_network_tz = false;
+
+        if (root_object.has_member ("utc_offset")) {
+            var offset_str = root_object.get_string_member ("utc_offset");
+            network_tz_offset = double.parse (offset_str) / 100.0;
+            has_network_tz = true;
+        }
+
+        var timezone = new TimeZone.local ();
+        var interval = timezone.find_interval (GLib.TimeType.UNIVERSAL, new DateTime.now_utc ().to_unix ());
+        double local_tz_offset = timezone.get_offset (interval) / 3600.0;
+
+        const double TZ_EPSILON = 0.01; // Epsilon for floating point comparison
+        if (has_network_tz && (!(-TZ_EPSILON < (network_tz_offset - local_tz_offset) < TZ_EPSILON))) {
+            var dialog = new Gtk.AlertDialog (
+                "Timezone Mismatch: The timezone from the network (UTC%+.2f) differs from your system's timezone (UTC%+.2f).\n\nWhich one would you like to use?",
+                network_tz_offset,
+                local_tz_offset
+            );
+            dialog.set_buttons ({"Use Network Timezone", "Use System Timezone"});
+
+            try {
+                var choice = yield dialog.choose (window, null);
+                timezone_offset_hours = (choice == 0) ? network_tz_offset : local_tz_offset;
+            } catch (Error e) {
+                throw new IOError.FAILED ("Failed to get user choice: %s", e.message);
+            }
+        } else {
+            timezone_offset_hours = local_tz_offset;
+        }
 
         latitude_spin.value = latitude;
+        longitude_spin.value = longitude;
+        timezone_spin.value = timezone_offset_hours;
         update_plot_data ();
         drawing_area.queue_draw ();
     }
@@ -384,6 +570,10 @@ public class DayLengthApp : Gtk.Application {
 
     /**
      * Handles mouse click events on the chart.
+     *
+     * @param n_press Number of presses (1 for single click).
+     * @param x X coordinate of the click within the drawing area.
+     * @param y Y coordinate of the click within the drawing area.
      */
     private void on_chart_clicked (int n_press, double x, double y) {
         int width = drawing_area.get_width ();
@@ -402,8 +592,22 @@ public class DayLengthApp : Gtk.Application {
             // Get date for this day
             var date = new DateTime (new TimeZone.local (), selected_year, 1, 1, 0, 0, 0).add_days (clicked_day);
             
-            string info_text = "Date: %s (Day %d)\nDay Length: %.2f hours".printf (
-                date.format ("%B %d"), clicked_day + 1, day_lengths[clicked_day]
+            string sunrise_str, sunset_str;
+            if (sunrise_times[clicked_day].is_nan () || sunset_times[clicked_day].is_nan ()) {
+                sunrise_str = "-";
+                sunset_str = "-";
+            } else {
+                int sunrise_h = (int) sunrise_times[clicked_day];
+                int sunrise_m = (int) ((sunrise_times[clicked_day] - sunrise_h) * 60);
+                sunrise_str = "%02d:%02d".printf (sunrise_h, sunrise_m);
+
+                int sunset_h = (int) sunset_times[clicked_day];
+                int sunset_m = (int) ((sunset_times[clicked_day] - sunset_h) * 60);
+                sunset_str = "%02d:%02d".printf (sunset_h, sunset_m);
+            }
+
+            string info_text = "Date: %s (Day %d)\nDay Length: %.2f hours\nSunrise: %s, Sunset: %s".printf (
+                date.format ("%B %d"), clicked_day + 1, day_lengths[clicked_day], sunrise_str, sunset_str
             );
 
             click_info_label.label = info_text;
@@ -417,6 +621,11 @@ public class DayLengthApp : Gtk.Application {
 
     /**
      * Draws the day length chart.
+     *
+     * @param area The Gtk.DrawingArea being drawn into.
+     * @param cr The Cairo context used for drawing.
+     * @param width Width of the drawing area in pixels.
+     * @param height Height of the drawing area in pixels.
      */
     private void draw_day_length_chart (Gtk.DrawingArea area, Cairo.Context cr, int width, int height) {
         // Light theme colors
@@ -521,8 +730,8 @@ public class DayLengthApp : Gtk.Application {
         cr.restore ();
 
         // Draw caption
-        string caption = "Day Length - Latitude: %.2f°, Year: %d, Horizon: %.2f°".printf (
-            latitude, selected_year, horizon_angle
+        string caption = "Lat: %.2f°, Lon: %.2f°, TZ: UTC%+.2f, Year: %d, Horizon: %.2f°".printf (
+            latitude, longitude, timezone_offset_hours, selected_year, horizon_angle
         );
         cr.set_font_size (18);
         var cap_te = Cairo.TextExtents ();
@@ -609,6 +818,8 @@ public class DayLengthApp : Gtk.Application {
 
     /**
      * Exports the plot to an image file.
+     *
+     * @param filepath Destination file path; file extension selects format (.png, .svg, .pdf).
      */
     private void export_plot_image (string filepath) {
         int width = drawing_area.get_width ();
@@ -672,6 +883,8 @@ public class DayLengthApp : Gtk.Application {
 
     /**
      * Exports data to a CSV file.
+     *
+     * @param filepath Destination CSV file path.
      */
     private void export_csv (string filepath) {
         try {
@@ -682,13 +895,39 @@ public class DayLengthApp : Gtk.Application {
             // Write header
             data_stream.put_string ("# Day Length Data\n");
             data_stream.put_string ("# Latitude: %.2f degrees\n".printf (latitude));
+            data_stream.put_string ("# Longitude: %.2f degrees\n".printf (longitude));
+            data_stream.put_string ("# Timezone: UTC%+.2f\n".printf (timezone_offset_hours));
             data_stream.put_string ("# Horizon Angle: %.2f degrees\n".printf (horizon_angle));
             data_stream.put_string ("#\n");
+            data_stream.put_string ("DayOfYear,Date,DayLength(hours),Sunrise,Sunset\n");
             // Write data
             for (int i = 0; i < day_lengths.length; i += 1) {
                 var date = new DateTime (new TimeZone.local (), selected_year, 1, 1, 0, 0, 0).add_days (i);
-                string date_str = date.format ("%Y%m%d");
-                data_stream.put_string ("%d,%s,%.3f\n".printf (i + 1, date_str, day_lengths[i]));
+                string date_str = date.format ("%Y-%m-%d");
+
+                string sunrise_str, sunset_str;
+                if (sunrise_times[i].is_nan () || sunset_times[i].is_nan ()) {
+                    sunrise_str = "N/A";
+                    sunset_str = "N/A";
+                } else {
+                    double sunrise_parts = sunrise_times[i];
+                    int sunrise_h = (int) sunrise_parts;
+                    sunrise_parts -= sunrise_h;
+                    int sunrise_m = (int) (sunrise_parts * 60);
+                    sunrise_parts -= ((double) sunrise_m / 60.0);
+                    int sunrise_s = (int) (sunrise_parts * 3600);
+                    sunrise_str = "%02d:%02d:%02d".printf (sunrise_h, sunrise_m, sunrise_s);
+
+                    double sunset_parts = sunset_times[i];
+                    int sunset_h = (int) sunset_parts;
+                    sunset_parts -= sunset_h;
+                    int sunset_m = (int) (sunset_parts * 60);
+                    sunset_parts -= ((double) sunset_m / 60.0);
+                    int sunset_s = (int) (sunset_parts * 3600);
+                    sunset_str = "%02d:%02d:%02d".printf (sunset_h, sunset_m, sunset_s);
+                }
+
+                data_stream.put_string ("%d,%s,%.3f,%s,%s\n".printf (i + 1, date_str, day_lengths[i], sunrise_str, sunset_str));
             }
 
             data_stream.close ();

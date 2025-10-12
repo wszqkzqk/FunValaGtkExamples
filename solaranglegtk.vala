@@ -243,7 +243,7 @@ public class SolarAngleApp : Gtk.Application {
      * @param timezone_offset_hrs Timezone offset from UTC in hours.
      * @param julian_date GLib's Julian Date for the day (from 0001-01-01).
      */
-        private void generate_sun_angles (double latitude_rad, double longitude_deg, double timezone_offset_hrs, double julian_date) {
+    private void generate_sun_angles (double latitude_rad, double longitude_deg, double timezone_offset_hrs, double julian_date) {
         double sin_lat = Math.sin (latitude_rad);
         double cos_lat = Math.cos (latitude_rad);
         // Base days from J2000.0 epoch (GLib's Julian Date is days since 0001-01-01 12:00 UTC)
@@ -379,7 +379,7 @@ public class SolarAngleApp : Gtk.Application {
         int chart_height = height - MARGIN_TOP - MARGIN_BOTTOM;
 
         double horizon_y = MARGIN_TOP + chart_height * 0.5; // 0° is at middle of -90° to +90° range
-        
+
         // Shade area below horizon
         cr.set_source_rgba (0.7, 0.7, 0.7, 0.3);
         cr.rectangle (MARGIN_LEFT, horizon_y, chart_width, height - MARGIN_BOTTOM - horizon_y);
@@ -465,14 +465,14 @@ public class SolarAngleApp : Gtk.Application {
             cr.set_source_rgba (0, 0, 1, 0.8);
             cr.arc (clicked_x, corresponding_y, 5, 0, 2 * Math.PI);
             cr.fill ();
-            
+    
             // Draw vertical line to show time
             cr.set_source_rgba (0, 0, 1, 0.5);
             cr.set_line_width (1);
             cr.move_to (clicked_x, MARGIN_TOP);
             cr.line_to (clicked_x, height - MARGIN_BOTTOM);
             cr.stroke ();
-            
+    
             // Draw horizontal line to show angle
             cr.move_to (MARGIN_LEFT, corresponding_y);
             cr.line_to (width - MARGIN_RIGHT, corresponding_y);
@@ -500,7 +500,7 @@ public class SolarAngleApp : Gtk.Application {
         // Draw chart captions
         string caption_line1 = "Solar Elevation Angle - Date: %s".printf (selected_date.format ("%Y-%m-%d"));
         string caption_line2 = "Lat: %.2f°, Lon: %.2f°, TZ: UTC%+.2f".printf (latitude, longitude, timezone_offset_hours);
-        
+
         cr.set_font_size (18);
         Cairo.TextExtents cap_ext1, cap_ext2;
         cr.text_extents (caption_line1, out cap_ext1);
@@ -524,7 +524,7 @@ public class SolarAngleApp : Gtk.Application {
         var png_filter = new Gtk.FileFilter ();
         png_filter.name = "PNG Images";
         png_filter.add_mime_type ("image/png");
-        
+
         var svg_filter = new Gtk.FileFilter ();
         svg_filter.name = "SVG Images";
         svg_filter.add_mime_type ("image/svg+xml");

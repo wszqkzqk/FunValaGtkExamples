@@ -4,7 +4,7 @@
 /**
  * Day Length Calculator CLI with Horizon Correction.
  * Copyright (C) 2025 wszqkzqk <wszqkzqk@qq.com>
- * 
+ *
  * A command-line tool that calculates day length using astronomical formulas
  * based on solar declination, with optional auto-location detection.
  */
@@ -14,7 +14,7 @@ private const double RAD2DEG = 180.0 / Math.PI;
 /**
  * Calculates day length using high-precision astronomical formula.
  * Based on http://www.jgiesen.de/elevaz/basics/meeus.htm
- * 
+ *
  * @param latitude_rad Latitude in radians.
  * @param julian_date GLib's Julian Date for the day (from 0001-01-01).
  * @param horizon_angle_deg Horizon angle correction in degrees (default -0.83° for atmospheric refraction).
@@ -78,7 +78,7 @@ private double calculate_day_length (double latitude_rad, double julian_date, do
 public static int main (string[] args) {
     Intl.setlocale ();
     // Define and parse command line arguments
-    double latitude_deg = 0.0; 
+    double latitude_deg = 0.0;
     string? date_str = null;
     double horizon_deg = -0.83;
     OptionEntry[] entries = {
