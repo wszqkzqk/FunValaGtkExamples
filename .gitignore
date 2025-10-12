@@ -1,0 +1,7 @@
+[^./]*
+!LICENSE
+!*.*
+
+*.exe
+*.bin
+*.dll
