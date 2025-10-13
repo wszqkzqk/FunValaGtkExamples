@@ -537,6 +537,7 @@ public class DayLengthApp : Gtk.Application {
                 local_tz_offset
             );
             dialog.set_buttons ({"Use Network Timezone", "Use System Timezone"});
+            dialog.set_default_button (0); // Default to network timezone
 
             try {
                 var choice = yield dialog.choose (window, null);
