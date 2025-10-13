@@ -241,15 +241,15 @@ private async void get_location_and_time_async (out double latitude_deg, out dou
         stderr.printf ("Timezone Mismatch Detected:\n");
         stderr.printf (" - Network-detected timezone: UTC%+.2f\n", network_tz_offset);
         stderr.printf (" - Your system's timezone:  UTC%+.2f\n", local_tz_offset);
-        stderr.printf ("Which one would you like to use? [S]ystem (default) / [N]etwork: ");
+        stderr.printf ("Which one would you like to use? [S]ystem / [N]etwork (default): ");
 
         string? choice = stdin.read_line ();
-        if (choice != null && choice.strip().down() == "n") {
-            timezone_offset_hours = network_tz_offset;
-            stderr.printf ("Using Network timezone.\n\n");
-        } else {
+        if (choice != null && choice.strip ().down () == "s") {
             timezone_offset_hours = local_tz_offset;
-            stderr.printf ("Using System timezone.\n\n");
+            stderr.printf ("Using System timezone.\n");
+        } else {
+            timezone_offset_hours = network_tz_offset;
+            stderr.printf ("Using Network timezone.\n");
         }
     } else {
         timezone_offset_hours = local_tz_offset;
