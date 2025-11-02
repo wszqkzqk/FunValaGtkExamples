@@ -107,7 +107,7 @@ public class DayLengthApp : Gtk.Application {
         var latitude_label = new Gtk.Label ("Latitude:") {
             halign = Gtk.Align.START,
         };
-        latitude_spin = new Gtk.SpinButton.with_range (-90, 90, 0.1) {
+        latitude_spin = new Gtk.SpinButton.with_range (-90.0, 90.0, 0.1) {
             value = latitude,
             digits = 2,
         };
@@ -146,7 +146,7 @@ public class DayLengthApp : Gtk.Application {
         var horizon_label = new Gtk.Label ("Horizon Angle:") {
             halign = Gtk.Align.START,
         };
-        horizon_spin = new Gtk.SpinButton.with_range (-5, 5, 0.01) {
+        horizon_spin = new Gtk.SpinButton.with_range (-20.0, 20.0, 0.01) {
             value = horizon_angle,
             digits = 2,
         };

@@ -160,7 +160,7 @@ public class DayLengthApp : Adw.Application {
         location_detect_row.activated.connect (on_auto_detect_location);
         location_time_group.add (location_detect_row);
 
-        latitude_row = new Adw.SpinRow.with_range (-90, 90, 0.1) {
+        latitude_row = new Adw.SpinRow.with_range (-90.0, 90.0, 0.1) {
             title = "Latitude",
             subtitle = "Degrees",
             value = latitude,
@@ -200,7 +200,7 @@ public class DayLengthApp : Adw.Application {
         location_time_group.add (timezone_row);
 
         // Horizon angle row
-        horizon_row = new Adw.SpinRow.with_range (-5, 5, 0.01) {
+        horizon_row = new Adw.SpinRow.with_range (-20.0, 20.0, 0.01) {
             title = "Horizon Angle",
             subtitle = "Degrees",
             value = horizon_angle,
