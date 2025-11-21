@@ -460,11 +460,25 @@ public class LunarAngleApp : Adw.Application {
         double rho_sin_phi_prime = (1 - earth_flattening) * Math.sin (phi_prime);
         double rho_cos_phi_prime = Math.cos (phi_prime);
 
+        double sin_lat = Math.sin (latitude_rad);
+        double cos_lat = Math.cos (latitude_rad);
+
         // Base days from J2000.0 epoch (GLib's Julian Date is days since 0001-01-01 12:00 UTC)
-        double days_since_j2000 = julian_date - 730120.5;
+        double base_days_since_j2000 = julian_date - 730120.5;
+
+        // Pre-compute obliquity that changes very slowly
+        double base_centuries_since_j2000 = base_days_since_j2000 / 36525.0;
+        double base_centuries_since_j2000_sq = base_centuries_since_j2000 * base_centuries_since_j2000;
+        double base_centuries_since_j2000_cu = base_centuries_since_j2000_sq * base_centuries_since_j2000;
+        double obliquity_deg = 23.439291111 - 0.013004167 * base_centuries_since_j2000 - 1.63889e-7 * base_centuries_since_j2000_sq + 5.0361e-7 * base_centuries_since_j2000_cu;
+        double obliquity_rad = obliquity_deg * DEG2RAD;
+        double obliquity_sin = Math.sin (obliquity_rad);
+        double obliquity_cos = Math.cos (obliquity_rad);
+        double sun_eq_c1 = 1.914602 - 0.004817 * base_centuries_since_j2000 - 0.000014 * base_centuries_since_j2000_sq;
+        double sun_eq_c2 = 0.019993 - 0.000101 * base_centuries_since_j2000;
 
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
-            double local_days_since_j2000 = days_since_j2000 + (i / 60.0 - timezone_offset_hrs) / 24.0;
+            double local_days_since_j2000 = base_days_since_j2000 + (i / 60.0 - timezone_offset_hrs) / 24.0;
             double centuries_since_j2000 = local_days_since_j2000 / 36525.0;
             double centuries_since_j2000_sq = centuries_since_j2000 * centuries_since_j2000;
             double centuries_since_j2000_cu = centuries_since_j2000_sq * centuries_since_j2000;
@@ -509,16 +523,13 @@ public class LunarAngleApp : Adw.Application {
             sun_mean_longitude = Math.fmod (sun_mean_longitude, 360.0);
             if (sun_mean_longitude < 0) sun_mean_longitude += 360.0;
 
-            double sun_mean_anomaly_meeus = 357.52911 + 35999.05029 * centuries_since_j2000 - 0.0001537 * centuries_since_j2000_sq;
-            double sun_mean_anomaly_meeus_rad = sun_mean_anomaly_meeus * DEG2RAD;
-
-            double sun_eq_center = (1.914602 - 0.004817 * centuries_since_j2000 - 0.000014 * centuries_since_j2000_sq) * Math.sin (sun_mean_anomaly_meeus_rad)
-                                 + (0.019993 - 0.000101 * centuries_since_j2000) * Math.sin (2 * sun_mean_anomaly_meeus_rad)
-                                 + 0.000289 * Math.sin (3 * sun_mean_anomaly_meeus_rad);
+            double sun_eq_center = sun_eq_c1 * Math.sin (sun_mean_anomaly_rad)
+                                 + sun_eq_c2 * Math.sin (2 * sun_mean_anomaly_rad)
+                                 + 0.000289 * Math.sin (3 * sun_mean_anomaly_rad);
 
             double sun_true_longitude = sun_mean_longitude + sun_eq_center;
 
-            double omega = 125.04 - 1934.136 * centuries_since_j2000;
+            double omega = moon_mean_longitude_deg - moon_argument_of_latitude_deg;
             double sun_apparent_longitude = sun_true_longitude - 0.00569 - 0.00478 * Math.sin (omega * DEG2RAD);
 
             double lambda_moon_rad = geocentric_ecliptic_longitude_deg * DEG2RAD;
@@ -536,9 +547,6 @@ public class LunarAngleApp : Adw.Application {
             moon_phases[i] = illuminated_fraction;
             moon_elongations[i] = diff_long;
 
-            double obliquity_deg = 23.4393 - 0.0130042 * centuries_since_j2000;
-            double obliquity_rad = obliquity_deg * DEG2RAD;
-
             double geocentric_ecliptic_longitude_rad = geocentric_ecliptic_longitude_deg * DEG2RAD;
             double geocentric_ecliptic_latitude_rad = geocentric_ecliptic_latitude_deg * DEG2RAD;
 
@@ -546,14 +554,12 @@ public class LunarAngleApp : Adw.Application {
             double cos_ecl_lon = Math.cos (geocentric_ecliptic_longitude_rad);
             double sin_ecl_lat = Math.sin (geocentric_ecliptic_latitude_rad);
             double cos_ecl_lat = Math.cos (geocentric_ecliptic_latitude_rad);
-            double sin_obliquity = Math.sin (obliquity_rad);
-            double cos_obliquity = Math.cos (obliquity_rad);
 
-            double ra_sin_component = sin_ecl_lon * cos_obliquity - Math.tan (geocentric_ecliptic_latitude_rad) * sin_obliquity;
+            double ra_sin_component = sin_ecl_lon * obliquity_cos - Math.tan (geocentric_ecliptic_latitude_rad) * obliquity_sin;
             double ra_cos_component = cos_ecl_lon;
             double geocentric_ra_rad = Math.atan2 (ra_sin_component, ra_cos_component);
 
-            double geocentric_dec_sin = sin_ecl_lat * cos_obliquity + cos_ecl_lat * sin_obliquity * sin_ecl_lon;
+            double geocentric_dec_sin = sin_ecl_lat * obliquity_cos + cos_ecl_lat * obliquity_sin * sin_ecl_lon;
             double geocentric_dec_rad = Math.asin (geocentric_dec_sin);
 
             double greenwich_mean_sidereal_time_deg = 280.46061837 + 360.98564736629 * local_days_since_j2000;
@@ -580,8 +586,8 @@ public class LunarAngleApp : Adw.Application {
             double topocentric_horizontal_distance = Math.sqrt (a_component * a_component + b_component * b_component);
             double topocentric_declination_rad = Math.atan2 (c_component, topocentric_horizontal_distance);
 
-            double elevation_sin = Math.sin (latitude_rad) * Math.sin (topocentric_declination_rad)
-                             + Math.cos (latitude_rad) * Math.cos (topocentric_declination_rad) * Math.cos (topocentric_hour_angle_rad);
+            double elevation_sin = sin_lat * Math.sin (topocentric_declination_rad)
+                             + cos_lat * Math.cos (topocentric_declination_rad) * Math.cos (topocentric_hour_angle_rad);
 
             moon_angles[i] = Math.asin (elevation_sin.clamp (-1.0, 1.0)) * RAD2DEG;
         }
@@ -885,16 +891,13 @@ public class LunarAngleApp : Adw.Application {
             data_stream.put_string ("# Latitude: %.2f, Longitude: %.2f\n".printf (latitude, longitude));
             data_stream.put_string ("# Timezone: UTC%+.2f\n".printf (timezone_offset_hours));
             data_stream.put_string ("#\n");
-            data_stream.put_string ("Time,Elevation(deg),Phase(%),PhaseDescription\n");
+            data_stream.put_string ("Time,Elevation(deg),Illumination\n");
 
             for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
                 int hours = i / 60;
                 int minutes = i % 60;
-                string phase_desc = get_phase_description(moon_phases[i], moon_elongations[i]);
-                phase_desc = phase_desc.replace(",", " ");
-                
                 data_stream.put_string (
-                    "%02d:%02d,%.3f,%.1f,%s\n".printf (hours, minutes, moon_angles[i], moon_phases[i]*100.0, phase_desc)
+                    "%02d:%02d,%.3f,%.2f%%\n".printf (hours, minutes, moon_angles[i], moon_phases[i] * 100.0)
                 );
             }
             data_stream.close ();
