@@ -22,9 +22,10 @@ public class LunarAngleApp : Adw.Application {
 
     // Model / persistent state
     private DateTime selected_date;
-    private double moon_angles[RESOLUTION_PER_MIN];
+    private double moon_angles[RESOLUTION_PER_MIN]; // Store moon elevation angles in degrees (-90 to +90)
     private double moon_phases[RESOLUTION_PER_MIN]; // Store illumination fraction (0.0 - 1.0)
     private double moon_elongations[RESOLUTION_PER_MIN];   // Store moon elongations in degrees (0 - 360)
+    private double moon_distances[RESOLUTION_PER_MIN]; // Store moon distance in km
     private double latitude = 0.0;
     private double longitude = 0.0;
     private double timezone_offset_hours = 0.0;
@@ -440,7 +441,8 @@ public class LunarAngleApp : Adw.Application {
      * Updates the info label with default lunar phase at 00:00.
      */
     private void update_info_label_default() {
-        click_info_label.label = "Click on chart for details.\n\nLunar Phase (00:00):\n%s".printf (
+        click_info_label.label = "Click on chart for details.\nReference Data (00:00):\nDistance: %.0f km\n%s".printf (
+            moon_distances[0],
             get_phase_description (moon_phases[0], moon_elongations[0])
         );
     }
@@ -578,18 +580,23 @@ public class LunarAngleApp : Adw.Application {
             double cos_hour_angle = Math.cos (hour_angle_rad);
 
             double a_component = declination_cos * sin_hour_angle;
+            double a_sq = a_component * a_component;
             double b_component = declination_cos * cos_hour_angle - rho_cos_phi_prime * parallax_sin;
+            double b_sq = b_component * b_component;
             double c_component = geocentric_dec_sin - rho_sin_phi_prime * parallax_sin;
+            double c_sq = c_component * c_component;
 
             double topocentric_hour_angle_rad = Math.atan2 (a_component, b_component);
-
-            double topocentric_horizontal_distance = Math.sqrt (a_component * a_component + b_component * b_component);
+            double topocentric_horizontal_distance = Math.sqrt (a_sq + b_sq);
             double topocentric_declination_rad = Math.atan2 (c_component, topocentric_horizontal_distance);
 
             double elevation_sin = sin_lat * Math.sin (topocentric_declination_rad)
                              + cos_lat * Math.cos (topocentric_declination_rad) * Math.cos (topocentric_hour_angle_rad);
 
             moon_angles[i] = Math.asin (elevation_sin.clamp (-1.0, 1.0)) * RAD2DEG;
+
+            double dist_ratio = Math.sqrt (a_sq + b_sq + c_sq);
+            moon_distances[i] = dist_ratio * (6378.137 / parallax_sin);
         }
     }
 
@@ -632,8 +639,8 @@ public class LunarAngleApp : Adw.Application {
             int hours = (int) clicked_time_hours;
             int minutes = (int) ((clicked_time_hours - hours) * 60);
 
-            string info_text = "Time: %02d:%02d\nElevation: %.1f°\n\n%s".printf (
-                hours, minutes, corresponding_angle, get_phase_description(phase, elongation)
+            string info_text = "Time: %02d:%02d\nElevation: %.1f°\nDistance: %.0f km\n%s".printf (
+                hours, minutes, corresponding_angle, moon_distances[time_minutes], get_phase_description(phase, elongation)
             );
             click_info_label.label = info_text;
             drawing_area.queue_draw ();
@@ -891,13 +898,13 @@ public class LunarAngleApp : Adw.Application {
             data_stream.put_string ("# Latitude: %.2f, Longitude: %.2f\n".printf (latitude, longitude));
             data_stream.put_string ("# Timezone: UTC%+.2f\n".printf (timezone_offset_hours));
             data_stream.put_string ("#\n");
-            data_stream.put_string ("Time,Elevation(deg),Illumination\n");
+            data_stream.put_string ("Time,Elevation(deg),Illumination,Distance(km)\n");
 
             for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
                 int hours = i / 60;
                 int minutes = i % 60;
                 data_stream.put_string (
-                    "%02d:%02d,%.3f,%.2f%%\n".printf (hours, minutes, moon_angles[i], moon_phases[i] * 100.0)
+                    "%02d:%02d,%.3f,%.2f%%,%.0f\n".printf (hours, minutes, moon_angles[i], moon_phases[i] * 100.0, moon_distances[i])
                 );
             }
             data_stream.close ();
