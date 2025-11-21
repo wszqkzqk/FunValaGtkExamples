@@ -23,6 +23,7 @@ public class SolarAngleApp : Adw.Application {
     // Model / persistent state
     private DateTime selected_date;
     private double sun_angles[RESOLUTION_PER_MIN];
+    private double sun_distances[RESOLUTION_PER_MIN];
     private double latitude = 0.0;
     private double longitude = 0.0;
     private double timezone_offset_hours = 0.0;
@@ -278,7 +279,7 @@ public class SolarAngleApp : Adw.Application {
             title = "Selected Point",
         };
 
-        click_info_label = new Gtk.Label ("Click on chart to view data\n") {
+        click_info_label = new Gtk.Label ("Click on chart to view data\n\n") {
             halign = Gtk.Align.START,
             margin_start = 12,
             margin_end = 12,
@@ -464,6 +465,8 @@ public class SolarAngleApp : Adw.Application {
         double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
         double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
         double tst_offset = 4.0 * longitude_deg - 60.0 * timezone_offset_hrs;
+        double eccentricity = 0.016708634 - 1.15091e-09 * base_days_from_epoch - 9.497e-17 * base_days_sq;
+
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
             double days_from_epoch = base_days_from_epoch + (i / 60.0 - timezone_offset_hrs) / 24.0;
             double days_from_epoch_sq = days_from_epoch * days_from_epoch;
@@ -479,10 +482,10 @@ public class SolarAngleApp : Adw.Application {
                 mean_longitude_deg += 360.0;
             }
             double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
-            double ecliptic_longitude_deg = mean_longitude_deg
-                + ecliptic_c1 * Math.sin (mean_anomaly_rad)
+            double equation_of_center_deg = ecliptic_c1 * Math.sin (mean_anomaly_rad)
                 + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
                 + 0.000290 * Math.sin (3.0 * mean_anomaly_rad);
+            double ecliptic_longitude_deg = mean_longitude_deg + equation_of_center_deg;
             ecliptic_longitude_deg = Math.fmod (ecliptic_longitude_deg, 360.0);
             if (ecliptic_longitude_deg < 0) {
                 ecliptic_longitude_deg += 360.0;
@@ -507,6 +510,10 @@ public class SolarAngleApp : Adw.Application {
             double hour_angle_rad = ((i + eqtime_minutes + tst_offset) / 4.0 - 180.0) * DEG2RAD;
             double elevation_sine = sin_lat * declination_sin + cos_lat * declination_cos * Math.cos (hour_angle_rad);
             sun_angles[i] = Math.asin (elevation_sine.clamp (-1.0, 1.0)) * RAD2DEG;
+
+            double true_anomaly_rad = mean_anomaly_rad + equation_of_center_deg * DEG2RAD;
+            double distance_au = (1.0 - eccentricity * eccentricity) / (1.0 + eccentricity * Math.cos (true_anomaly_rad));
+            sun_distances[i] = distance_au * 149597870.7; // Convert AU to km
         }
     }
 
@@ -525,7 +532,7 @@ public class SolarAngleApp : Adw.Application {
 
         // Clear click point when data updates
         has_click_point = false;
-        click_info_label.label = "Click on chart to view data\n";
+        click_info_label.label = "Click on chart to view data\n\n";
     }
 
     /**
@@ -554,8 +561,8 @@ public class SolarAngleApp : Adw.Application {
             int minutes = (int) ((clicked_time_hours - hours) * 60);
 
             // Update info label
-            string info_text = "Time: %02d:%02d\nSolar Elevation: %.1f°".printf (
-                hours, minutes, corresponding_angle
+            string info_text = "Time: %02d:%02d\nSolar Elevation: %.1f°\nDistance: %.5E km".printf (
+                hours, minutes, corresponding_angle, sun_distances[time_minutes]
             );
 
             click_info_label.label = info_text;
@@ -563,7 +570,7 @@ public class SolarAngleApp : Adw.Application {
         } else {
             // Double click or outside plot area - clear point
             has_click_point = false;
-            click_info_label.label = "Click on chart to view data\n";
+            click_info_label.label = "Click on chart to view data\n\n";
             drawing_area.queue_draw ();
         }
     }
@@ -857,14 +864,14 @@ public class SolarAngleApp : Adw.Application {
             data_stream.put_string ("#\n");
 
             // Write CSV header
-            data_stream.put_string ("Time,Solar Elevation (degrees)\n");
+            data_stream.put_string ("Time,Solar Elevation (degrees),Distance (km)\n");
 
             // Write data points
             for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
                 int hours = i / 60;
                 int minutes = i % 60;
                 data_stream.put_string (
-                    "%02d:%02d,%.3f\n".printf (hours, minutes, sun_angles[i])
+                    "%02d:%02d,%.3f,%.5E\n".printf (hours, minutes, sun_angles[i], sun_distances[i])
                 );
             }
 
