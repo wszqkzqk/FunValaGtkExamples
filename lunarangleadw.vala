@@ -24,7 +24,7 @@ public class LunarAngleApp : Adw.Application {
     private DateTime selected_date;
     private double moon_angles[RESOLUTION_PER_MIN];
     private double moon_phases[RESOLUTION_PER_MIN]; // Store illumination fraction (0.0 - 1.0)
-    private double moon_ages[RESOLUTION_PER_MIN];   // Store moon age in degrees (0 - 360)
+    private double moon_elongations[RESOLUTION_PER_MIN];   // Store moon elongations in degrees (0 - 360)
     private double latitude = 0.0;
     private double longitude = 0.0;
     private double timezone_offset_hours = 0.0;
@@ -269,7 +269,7 @@ public class LunarAngleApp : Adw.Application {
         var click_info_group = new Adw.PreferencesGroup () {
             title = "Lunar Info",
         };
-        click_info_label = new Gtk.Label ("") {
+        click_info_label = new Gtk.Label ("Click on chart for details.\n\n\n") {
             halign = Gtk.Align.START,
             margin_start = 12,
             margin_end = 12,
@@ -413,7 +413,7 @@ public class LunarAngleApp : Adw.Application {
     }
 
     /**
-     * Gets the phase description string based on age/angle.
+     * Gets the phase description string based on elongation angle.
      *
      * @param phase_fraction Illuminated fraction (0.0-1.0).
      * @param elongation_deg Elongation angle in degrees.
@@ -423,7 +423,7 @@ public class LunarAngleApp : Adw.Application {
         while (elongation_deg < 0) elongation_deg += 360.0;
         while (elongation_deg >= 360.0) elongation_deg -= 360.0;
 
-        string desc = "";
+        string desc;
         if (elongation_deg < 5 || elongation_deg > 355) desc = "New Moon";
         else if (elongation_deg < 85) desc = "Waxing Crescent";
         else if (elongation_deg < 95) desc = "First Quarter";
@@ -441,7 +441,7 @@ public class LunarAngleApp : Adw.Application {
      */
     private void update_info_label_default() {
         click_info_label.label = "Click on chart for details.\n\nLunar Phase (00:00):\n%s".printf (
-            get_phase_description (moon_phases[0], moon_ages[0])
+            get_phase_description (moon_phases[0], moon_elongations[0])
         );
     }
 
@@ -466,12 +466,15 @@ public class LunarAngleApp : Adw.Application {
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
             double local_days_since_j2000 = days_since_j2000 + (i / 60.0 - timezone_offset_hrs) / 24.0;
             double centuries_since_j2000 = local_days_since_j2000 / 36525.0;
+            double centuries_since_j2000_sq = centuries_since_j2000 * centuries_since_j2000;
+            double centuries_since_j2000_cu = centuries_since_j2000_sq * centuries_since_j2000;
+            double centuries_since_j2000_q = centuries_since_j2000_cu * centuries_since_j2000;
 
-            double moon_mean_longitude_deg = 218.3164477 + 481267.88123421 * centuries_since_j2000;
-            double mean_elongation_deg = 297.8501921 + 445267.1114034 * centuries_since_j2000;
-            double sun_mean_anomaly_deg = 357.5291092 + 35999.0502909 * centuries_since_j2000;
-            double moon_mean_anomaly_deg = 134.9633964 + 477198.8675055 * centuries_since_j2000;
-            double moon_argument_of_latitude_deg = 93.2720950 + 483202.0175233 * centuries_since_j2000;
+            double moon_mean_longitude_deg = 218.3164477 + 481267.88123421 * centuries_since_j2000 - 0.0015786 * centuries_since_j2000_sq + centuries_since_j2000_cu / 538841.0 - centuries_since_j2000_q / 65194000.0;
+            double mean_elongation_deg = 297.8501921 + 445267.1114034 * centuries_since_j2000 - 0.0018819 * centuries_since_j2000_sq + centuries_since_j2000_cu / 545868.0 - centuries_since_j2000_q / 113065000.0;
+            double sun_mean_anomaly_deg = 357.5291092 + 35999.0502909 * centuries_since_j2000 - 0.0001536 * centuries_since_j2000_sq + centuries_since_j2000_cu / 24490000.0;
+            double moon_mean_anomaly_deg = 134.9633964 + 477198.8675055 * centuries_since_j2000 + 0.0087414 * centuries_since_j2000_sq + centuries_since_j2000_cu / 69699.0 - centuries_since_j2000_q / 14712000.0;
+            double moon_argument_of_latitude_deg = 93.2720950 + 483202.0175233 * centuries_since_j2000 - 0.0036539 * centuries_since_j2000_sq - centuries_since_j2000_cu / 3526000.0 + centuries_since_j2000_q / 863310000.0;
 
             double mean_elongation_rad = mean_elongation_deg * DEG2RAD;
             double sun_mean_anomaly_rad = sun_mean_anomaly_deg * DEG2RAD;
@@ -502,12 +505,36 @@ public class LunarAngleApp : Adw.Application {
 
             double horizontal_parallax_rad = horizontal_parallax_deg * DEG2RAD;
 
-            double elongation_deg = Math.fmod (mean_elongation_deg, 360.0);
-            if (elongation_deg < 0) elongation_deg += 360.0;
+            double sun_mean_longitude = 280.46646 + 36000.76983 * centuries_since_j2000 + 0.0003032 * centuries_since_j2000_sq;
+            sun_mean_longitude = Math.fmod (sun_mean_longitude, 360.0);
+            if (sun_mean_longitude < 0) sun_mean_longitude += 360.0;
 
-            double illuminated_fraction = (1.0 - Math.cos (elongation_deg * DEG2RAD)) / 2.0;
+            double sun_mean_anomaly_meeus = 357.52911 + 35999.05029 * centuries_since_j2000 - 0.0001537 * centuries_since_j2000_sq;
+            double sun_mean_anomaly_meeus_rad = sun_mean_anomaly_meeus * DEG2RAD;
+
+            double sun_eq_center = (1.914602 - 0.004817 * centuries_since_j2000 - 0.000014 * centuries_since_j2000_sq) * Math.sin (sun_mean_anomaly_meeus_rad)
+                                 + (0.019993 - 0.000101 * centuries_since_j2000) * Math.sin (2 * sun_mean_anomaly_meeus_rad)
+                                 + 0.000289 * Math.sin (3 * sun_mean_anomaly_meeus_rad);
+
+            double sun_true_longitude = sun_mean_longitude + sun_eq_center;
+
+            double omega = 125.04 - 1934.136 * centuries_since_j2000;
+            double sun_apparent_longitude = sun_true_longitude - 0.00569 - 0.00478 * Math.sin (omega * DEG2RAD);
+
+            double lambda_moon_rad = geocentric_ecliptic_longitude_deg * DEG2RAD;
+            double beta_moon_rad = geocentric_ecliptic_latitude_deg * DEG2RAD;
+            double lambda_sun_rad = sun_apparent_longitude * DEG2RAD;
+
+            double cos_elongation = Math.cos (beta_moon_rad) * Math.cos (lambda_moon_rad - lambda_sun_rad);
+
+            double illuminated_fraction = (1.0 - cos_elongation) / 2.0;
+
+            double diff_long = geocentric_ecliptic_longitude_deg - sun_apparent_longitude;
+            diff_long = Math.fmod (diff_long, 360.0);
+            if (diff_long < 0) diff_long += 360.0;
+
             moon_phases[i] = illuminated_fraction;
-            moon_ages[i] = elongation_deg;
+            moon_elongations[i] = diff_long;
 
             double obliquity_deg = 23.4393 - 0.0130042 * centuries_since_j2000;
             double obliquity_rad = obliquity_deg * DEG2RAD;
@@ -544,8 +571,8 @@ public class LunarAngleApp : Adw.Application {
             double sin_hour_angle = Math.sin (hour_angle_rad);
             double cos_hour_angle = Math.cos (hour_angle_rad);
 
-            double a_component = declination_cos * sin_hour_angle - rho_cos_phi_prime * parallax_sin * sin_hour_angle;
-            double b_component = declination_cos * cos_hour_angle - rho_cos_phi_prime * parallax_sin * cos_hour_angle;
+            double a_component = declination_cos * sin_hour_angle;
+            double b_component = declination_cos * cos_hour_angle - rho_cos_phi_prime * parallax_sin;
             double c_component = geocentric_dec_sin - rho_sin_phi_prime * parallax_sin;
 
             double topocentric_hour_angle_rad = Math.atan2 (a_component, b_component);
@@ -593,14 +620,14 @@ public class LunarAngleApp : Adw.Application {
             int time_minutes = (int) (clicked_time_hours * 60);
             corresponding_angle = moon_angles[time_minutes];
             double phase = moon_phases[time_minutes];
-            double age = moon_ages[time_minutes];
+            double elongation = moon_elongations[time_minutes];
             has_click_point = true;
 
             int hours = (int) clicked_time_hours;
             int minutes = (int) ((clicked_time_hours - hours) * 60);
 
             string info_text = "Time: %02d:%02d\nElevation: %.1f°\n\n%s".printf (
-                hours, minutes, corresponding_angle, get_phase_description(phase, age)
+                hours, minutes, corresponding_angle, get_phase_description(phase, elongation)
             );
             click_info_label.label = info_text;
             drawing_area.queue_draw ();
@@ -863,7 +890,7 @@ public class LunarAngleApp : Adw.Application {
             for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
                 int hours = i / 60;
                 int minutes = i % 60;
-                string phase_desc = get_phase_description(moon_phases[i], moon_ages[i]);
+                string phase_desc = get_phase_description(moon_phases[i], moon_elongations[i]);
                 phase_desc = phase_desc.replace(",", " ");
                 
                 data_stream.put_string (
