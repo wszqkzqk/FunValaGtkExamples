@@ -20,6 +20,8 @@ public class SolarCalc : Adw.Application {
     private const int MARGIN_RIGHT = 20;
     private const int MARGIN_TOP = 50;
     private const int MARGIN_BOTTOM = 70;
+    // Default info label
+    private const string DEFAULT_INFO_LABEL = "Click on the chart to see details\nElevation: --\nDistance: --";
 
     // Model / persistent state
     private DateTime selected_date;
@@ -280,7 +282,7 @@ public class SolarCalc : Adw.Application {
             title = "Selected Point",
         };
 
-        click_info_label = new Gtk.Label ("Click on chart to view data\n\n") {
+        click_info_label = new Gtk.Label (DEFAULT_INFO_LABEL) {
             halign = Gtk.Align.START,
             margin_start = 12,
             margin_end = 12,
@@ -533,7 +535,7 @@ public class SolarCalc : Adw.Application {
 
         // Clear click point when data updates
         has_click_point = false;
-        click_info_label.label = "Click on chart to view data\n\n";
+        click_info_label.label = DEFAULT_INFO_LABEL;
     }
 
     /**
@@ -562,7 +564,7 @@ public class SolarCalc : Adw.Application {
             int minutes = (int) ((clicked_time_hours - hours) * 60);
 
             // Update info label
-            string info_text = "Time: %02d:%02d\nSolar Elevation: %.1f°\nDistance: %.5E km".printf (
+            string info_text = "Time: %02d:%02d\nElevation: %.1f°\nDistance: %.5E km".printf (
                 hours, minutes, corresponding_angle, sun_distances[time_minutes]
             );
 
@@ -571,7 +573,7 @@ public class SolarCalc : Adw.Application {
         } else {
             // Double click or outside plot area - clear point
             has_click_point = false;
-            click_info_label.label = "Click on chart to view data\n\n";
+            click_info_label.label = DEFAULT_INFO_LABEL;
             drawing_area.queue_draw ();
         }
     }
