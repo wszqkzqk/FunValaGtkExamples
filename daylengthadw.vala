@@ -337,7 +337,7 @@ public class DayLengthApp : Adw.Application {
         double days_cb = days_sq * days_from_epoch;
 
         // Mean anomaly
-        double mean_anomaly_deg = 357.52910 + 0.985600282 * days_from_epoch - 1.1686e-13 * days_sq - 9.85e-21 * days_cb;
+        double mean_anomaly_deg = 357.52772 + 0.985600282 * days_from_epoch - 1.2016e-13 * days_sq - 6.835e-20 * days_cb;
         double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
 
         // Mean longitude (normalized)
@@ -350,7 +350,7 @@ public class DayLengthApp : Adw.Application {
         double ecliptic_longitude_deg = mean_longitude_deg
             + ecliptic_c1 * Math.sin (mean_anomaly_rad)
             + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
-            + 0.000290 * Math.sin (3.0 * mean_anomaly_rad);
+            + 0.000289 * Math.sin (3.0 * mean_anomaly_rad);
 
         double ecliptic_longitude_rad = ecliptic_longitude_deg * DEG2RAD;
         double ecliptic_longitude_sin = Math.sin (ecliptic_longitude_rad);
@@ -376,7 +376,7 @@ public class DayLengthApp : Adw.Application {
 
     /**
      * Calculates day length, sunrise, and sunset times.
-     * Based on http://www.jgiesen.de/elevaz/basics/meeus.htm
+     * Based on Meeus's book "Astronomical Algorithms" (1998)
      *
      * @param latitude_rad Latitude in radians.
      * @param longitude_deg Longitude in degrees.
@@ -405,7 +405,7 @@ public class DayLengthApp : Adw.Application {
         double obliquity_cos = Math.cos (obliquity_deg * DEG2RAD);
 
         // Ecliptic correction coefficients
-        double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch_utc_midnight - 1.049e-14 * base_days_sq;
+        double ecliptic_c1 = 1.914602 - 1.3188e-7 * base_days_from_epoch_utc_midnight - 1.049e-14 * base_days_sq;
         double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch_utc_midnight;
 
         double tst_offset = 4.0 * longitude_deg - 60.0 * timezone_offset_hrs;

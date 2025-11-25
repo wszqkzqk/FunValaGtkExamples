@@ -447,7 +447,7 @@ public class SolarCalc : Adw.Application {
 
     /**
      * Calculates solar elevation angles for each minute of the day.
-     * Based on http://www.jgiesen.de/elevaz/basics/meeus.htm
+     * Based on Meeus's book "Astronomical Algorithms" (1998)
      *
      * @param latitude_rad Latitude in radians.
      * @param longitude_deg Longitude in degrees.
@@ -465,7 +465,7 @@ public class SolarCalc : Adw.Application {
         double obliquity_deg = 23.439291111 - 3.560347e-7 * base_days_from_epoch - 1.2285e-16 * base_days_sq + 1.0335e-20 * base_days_cb;
         double obliquity_sin = Math.sin (obliquity_deg * DEG2RAD);
         double obliquity_cos = Math.cos (obliquity_deg * DEG2RAD);
-        double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
+        double ecliptic_c1 = 1.914602 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
         double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
         double tst_offset = 4.0 * longitude_deg - 60.0 * timezone_offset_hrs;
         double eccentricity = 0.016708634 - 1.15091e-09 * base_days_from_epoch - 9.497e-17 * base_days_sq;
@@ -474,7 +474,7 @@ public class SolarCalc : Adw.Application {
             double days_from_epoch = base_days_from_epoch + (i / 60.0 - timezone_offset_hrs) / 24.0;
             double days_from_epoch_sq = days_from_epoch * days_from_epoch;
             double days_from_epoch_cb = days_from_epoch_sq * days_from_epoch;
-            double mean_anomaly_deg = 357.52910 + 0.985600282 * days_from_epoch - 1.1686e-13 * days_from_epoch_sq - 9.85e-21 * days_from_epoch_cb;
+            double mean_anomaly_deg = 357.52772 + 0.985600282 * days_from_epoch - 1.2016e-13 * days_from_epoch_sq - 6.835e-20 * days_from_epoch_cb;
             mean_anomaly_deg = Math.fmod (mean_anomaly_deg, 360.0);
             if (mean_anomaly_deg < 0) {
                 mean_anomaly_deg += 360.0;
@@ -487,7 +487,7 @@ public class SolarCalc : Adw.Application {
             double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
             double equation_of_center_deg = ecliptic_c1 * Math.sin (mean_anomaly_rad)
                 + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
-                + 0.000290 * Math.sin (3.0 * mean_anomaly_rad);
+                + 0.000289 * Math.sin (3.0 * mean_anomaly_rad);
             double ecliptic_longitude_deg = mean_longitude_deg + equation_of_center_deg;
             ecliptic_longitude_deg = Math.fmod (ecliptic_longitude_deg, 360.0);
             if (ecliptic_longitude_deg < 0) {

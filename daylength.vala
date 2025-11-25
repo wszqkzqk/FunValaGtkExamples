@@ -13,7 +13,7 @@ private const double RAD2DEG = 180.0 / Math.PI;
 
 /**
  * Calculates day length using high-precision astronomical formula.
- * Based on http://www.jgiesen.de/elevaz/basics/meeus.htm
+ * Based on Meeus's book "Astronomical Algorithms" (1998)
  *
  * @param latitude_rad Latitude in radians.
  * @param julian_date GLib's Julian Date for the day (from 0001-01-01).
@@ -30,10 +30,10 @@ private double calculate_day_length (double latitude_rad, double julian_date, do
     double base_days_cb = base_days_sq * base_days_from_epoch;
     double obliquity_deg = 23.439291111 - 3.560347e-7 * base_days_from_epoch - 1.2285e-16 * base_days_sq + 1.0335e-20 * base_days_cb;
     double obliquity_sin = Math.sin (obliquity_deg * DEG2RAD);
-    double ecliptic_c1 = 1.914600 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
+    double ecliptic_c1 = 1.914602 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
     double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
-    const double ecliptic_c3 = 0.000290;
-    double mean_anomaly_deg = 357.52910 + 0.985600282 * base_days_from_epoch - 1.1686e-13 * base_days_sq - 9.85e-21 * base_days_cb;
+    const double ecliptic_c3 = 0.000289;
+    double mean_anomaly_deg = 357.52772 + 0.985600282 * base_days_from_epoch - 1.2016e-13 * base_days_sq - 6.835e-20 * base_days_cb;
     mean_anomaly_deg = Math.fmod (mean_anomaly_deg, 360.0);
     if (mean_anomaly_deg < 0) {
         mean_anomaly_deg += 360.0;
