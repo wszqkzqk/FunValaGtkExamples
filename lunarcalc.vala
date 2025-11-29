@@ -504,21 +504,24 @@ public class LunarCalc : Adw.Application {
                 + 0.2777 * Math.sin (moon_mean_anomaly_rad - moon_argument_of_latitude_rad)
                 + 0.1732 * Math.sin (2 * mean_elongation_rad - moon_argument_of_latitude_rad);
 
-            double horizontal_parallax_deg = 0.95072
-                + 0.05182 * Math.cos (moon_mean_anomaly_rad)
-                + 0.00953 * Math.cos (2 * mean_elongation_rad - moon_mean_anomaly_rad)
-                + 0.00784 * Math.cos (2 * mean_elongation_rad)
-                + 0.00282 * Math.cos (2 * sun_mean_anomaly_rad);
+            double geocentric_dist_km = 385000.6
+                - 20905.0 * Math.cos (moon_mean_anomaly_rad)
+                - 3699.0 * Math.cos (2 * mean_elongation_rad - moon_mean_anomaly_rad)
+                - 2956.0 * Math.cos (2 * mean_elongation_rad)
+                - 570.0 * Math.cos (2 * moon_mean_anomaly_rad)
+                + 246.0 * Math.cos (2 * mean_elongation_rad - 2 * moon_mean_anomaly_rad)
+                - 205.0 * Math.cos (sun_mean_anomaly_rad)
+                - 171.0 * Math.cos (2 * mean_elongation_rad + moon_mean_anomaly_rad);
 
-            double horizontal_parallax_rad = horizontal_parallax_deg * DEG2RAD;
+            double parallax_sin = 6378.137 / geocentric_dist_km;
 
             double sun_mean_longitude = 280.46646 + 36000.76983 * centuries_since_j2000 + 0.0003032 * centuries_since_j2000_sq;
             sun_mean_longitude = Math.fmod (sun_mean_longitude, 360.0);
             if (sun_mean_longitude < 0) sun_mean_longitude += 360.0;
 
             double sun_eq_center = sun_eq_c1 * Math.sin (sun_mean_anomaly_rad)
-                                 + sun_eq_c2 * Math.sin (2 * sun_mean_anomaly_rad)
-                                 + 0.000289 * Math.sin (3 * sun_mean_anomaly_rad);
+                + sun_eq_c2 * Math.sin (2 * sun_mean_anomaly_rad)
+                + 0.000289 * Math.sin (3 * sun_mean_anomaly_rad);
 
             double sun_true_longitude = sun_mean_longitude + sun_eq_center;
 
@@ -565,7 +568,6 @@ public class LunarCalc : Adw.Application {
             double hour_angle_rad = local_mean_sidereal_time_rad - geocentric_ra_rad;
 
             double declination_cos = Math.cos (geocentric_dec_rad);
-            double parallax_sin = Math.sin (horizontal_parallax_rad);
 
             double sin_hour_angle = Math.sin (hour_angle_rad);
             double cos_hour_angle = Math.cos (hour_angle_rad);
@@ -587,7 +589,7 @@ public class LunarCalc : Adw.Application {
             moon_angles[i] = Math.asin (elevation_sin.clamp (-1.0, 1.0)) * RAD2DEG;
 
             double dist_ratio = Math.sqrt (a_sq + b_sq + c_sq);
-            moon_distances[i] = dist_ratio * (6378.137 / parallax_sin);
+            moon_distances[i] = dist_ratio * geocentric_dist_km;
         }
     }
 
