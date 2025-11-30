@@ -510,7 +510,7 @@ public class LunarCalc : Adw.Application {
                 - 2956.0 * Math.cos (2 * mean_elongation_rad)
                 - 570.0 * Math.cos (2 * moon_mean_anomaly_rad)
                 + 246.0 * Math.cos (2 * mean_elongation_rad - 2 * moon_mean_anomaly_rad)
-                - 205.0 * Math.cos (sun_mean_anomaly_rad)
+                - 205.0 * Math.cos (2 * mean_elongation_rad - sun_mean_anomaly_rad)
                 - 171.0 * Math.cos (2 * mean_elongation_rad + moon_mean_anomaly_rad);
 
             double parallax_sin = 6378.137 / geocentric_dist_km;
