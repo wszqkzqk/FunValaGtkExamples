@@ -496,7 +496,7 @@ public class LunarCalc : Adw.Application {
                 - 0.1856 * Math.sin (sun_mean_anomaly_rad)
                 - 0.1143 * Math.sin (2 * moon_argument_of_latitude_rad)
                 - 0.0588 * Math.sin (2 * mean_elongation_rad - 2 * moon_mean_anomaly_rad)
-                - 0.0572 * Math.sin (2 * mean_elongation_rad - sun_mean_anomaly_rad - moon_mean_anomaly_rad)
+                + 0.0572 * Math.sin (2 * mean_elongation_rad - sun_mean_anomaly_rad - moon_mean_anomaly_rad)
                 + 0.0533 * Math.sin (2 * mean_elongation_rad + moon_mean_anomaly_rad);
 
             double geocentric_ecliptic_latitude_deg = 5.1282 * Math.sin (moon_argument_of_latitude_rad)
