@@ -19,7 +19,7 @@ public class LunarCalc : Adw.Application {
     private const int MARGIN_TOP = 50;
     private const int MARGIN_BOTTOM = 70;
     // Default info label
-    private const string DEFAULT_INFO_LABEL = "Click on the chart to see details\nElevation: --\nDistance: --\nPhase: --";
+    private const string DEFAULT_INFO_LABEL = "Click on the chart for details\nElevation: --\nDistance: --\nPhase: --";
 
     // Model / persistent state
     private DateTime selected_date;
@@ -30,6 +30,7 @@ public class LunarCalc : Adw.Application {
     private double latitude = 0.0;
     private double longitude = 0.0;
     private double timezone_offset_hours = 0.0;
+    private double refraction_factor = 1.0;
 
     // Interaction / transient UI state
     private double clicked_time_hours = 0.0;
@@ -130,10 +131,16 @@ public class LunarCalc : Adw.Application {
 
         var main_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
 
-        var left_panel = new Gtk.Box (Gtk.Orientation.VERTICAL, 12) {
+        var left_scrolled = new Gtk.ScrolledWindow () {
+            hscrollbar_policy = Gtk.PolicyType.NEVER,
+            vscrollbar_policy = Gtk.PolicyType.AUTOMATIC,
             hexpand = false,
             vexpand = true,
-            width_request = 320,
+            propagate_natural_height = true,
+            propagate_natural_width = true,
+        };
+
+        var left_panel = new Gtk.Box (Gtk.Orientation.VERTICAL, 12) {
             margin_start = 12,
             margin_end = 12,
             margin_top = 12,
@@ -141,8 +148,8 @@ public class LunarCalc : Adw.Application {
         };
 
         // Location and Time Settings Group
-        var location_time_group = new Adw.PreferencesGroup () {
-            title = "Location and Time Settings",
+        var observer_parameters_group = new Adw.PreferencesGroup () {
+            title = "Observer Parameters",
         };
 
         var location_detect_row = new Adw.ActionRow () {
@@ -208,18 +215,32 @@ public class LunarCalc : Adw.Application {
             drawing_area.queue_draw ();
         });
 
-        location_time_group.add (location_detect_row);
-        location_time_group.add (latitude_row);
-        location_time_group.add (longitude_row);
-        location_time_group.add (timezone_row);
+        var refraction_row = new Adw.SpinRow.with_range (0.0, 2.0, 0.05) {
+            title = "Refraction",
+            subtitle = "Correction level",
+            tooltip_text = "Set to 1.0 for standard atmosphere.\nSet to 0.0 to disable refraction.",
+            value = refraction_factor,
+            digits = 2,
+        };
+        refraction_row.notify["value"].connect (() => {
+            refraction_factor = refraction_row.value;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+        });
+
+        observer_parameters_group.add (location_detect_row);
+        observer_parameters_group.add (latitude_row);
+        observer_parameters_group.add (longitude_row);
+        observer_parameters_group.add (timezone_row);
+        observer_parameters_group.add (refraction_row);
 
         // Date Selection Group
         var date_group = new Adw.PreferencesGroup () {
             title = "Date Selection",
         };
         var calendar = new Gtk.Calendar () {
-            margin_start = 12,
-            margin_end = 12,
+            margin_start = 20,
+            margin_end = 20,
             margin_top = 6,
             margin_bottom = 6,
         };
@@ -231,6 +252,24 @@ public class LunarCalc : Adw.Application {
         var calendar_row = new Adw.ActionRow ();
         calendar_row.child = calendar;
         date_group.add (calendar_row);
+
+        // Click Info Group
+        var click_info_group = new Adw.PreferencesGroup () {
+            title = "Lunar Info",
+        };
+
+        click_info_label = new Gtk.Label (DEFAULT_INFO_LABEL) {
+            halign = Gtk.Align.START,
+            margin_start = 12,
+            margin_end = 12,
+            margin_top = 6,
+            margin_bottom = 6,
+            wrap = true,
+        };
+
+        var click_info_row = new Adw.ActionRow ();
+        click_info_row.child = click_info_label;
+        click_info_group.add (click_info_row);
 
         // Export Group
         var export_group = new Adw.PreferencesGroup () {
@@ -267,26 +306,11 @@ public class LunarCalc : Adw.Application {
         export_group.add (export_image_row);
         export_group.add (export_csv_row);
 
-        // Click Info Group (Enhanced for Lunar)
-        var click_info_group = new Adw.PreferencesGroup () {
-            title = "Lunar Info",
-        };
-        click_info_label = new Gtk.Label (DEFAULT_INFO_LABEL) {
-            halign = Gtk.Align.START,
-            margin_start = 12,
-            margin_end = 12,
-            margin_top = 6,
-            margin_bottom = 6,
-            wrap = true,
-        };
-        var click_info_row = new Adw.ActionRow ();
-        click_info_row.child = click_info_label;
-        click_info_group.add (click_info_row);
-
-        left_panel.append (location_time_group);
+        left_panel.append (observer_parameters_group);
         left_panel.append (date_group);
-        left_panel.append (export_group);
         left_panel.append (click_info_group);
+        left_panel.append (export_group);
+        left_scrolled.child = left_panel;
 
         drawing_area = new Gtk.DrawingArea () {
              hexpand = true,
@@ -300,7 +324,7 @@ public class LunarCalc : Adw.Application {
         click_controller.pressed.connect (on_chart_clicked);
         drawing_area.add_controller (click_controller);
 
-        main_box.append (left_panel);
+        main_box.append (left_scrolled);
         main_box.append (drawing_area);
 
         toolbar_view.content = main_box;
@@ -585,9 +609,10 @@ public class LunarCalc : Adw.Application {
             double topocentric_declination_rad = Math.atan2 (c_component, topocentric_horizontal_distance);
 
             double elevation_sin = sin_lat * Math.sin (topocentric_declination_rad)
-                             + cos_lat * Math.cos (topocentric_declination_rad) * Math.cos (topocentric_hour_angle_rad);
+                + cos_lat * Math.cos (topocentric_declination_rad) * Math.cos (topocentric_hour_angle_rad);
 
-            moon_angles[i] = Math.asin (elevation_sin.clamp (-1.0, 1.0)) * RAD2DEG;
+            double true_elevation_deg = Math.asin (elevation_sin.clamp (-1.0, 1.0)) * RAD2DEG;
+            moon_angles[i] = true_elevation_deg + calculate_refraction (true_elevation_deg, refraction_factor);
 
             double dist_ratio = Math.sqrt (a_sq + b_sq + c_sq);
             moon_distances[i] = dist_ratio * geocentric_dist_km;
@@ -608,6 +633,29 @@ public class LunarCalc : Adw.Application {
         generate_moon_angles (latitude_rad, longitude, timezone_offset_hours, julian_date);
         has_click_point = false;
         click_info_label.label = DEFAULT_INFO_LABEL;
+    }
+
+    /**
+     * Calculates atmospheric refraction using Saemundsson's formula.
+     *
+     * The formula R = 1.02 / tan(h + 10.3/(h+5.11)) mathematically fails
+     * when the inner argument exceeds 90 degrees or creates a singularity.
+     * The roots are exactly ~ -5.0015 and ~ 89.8915.
+     * Inside this range, the formula is valid.
+     *
+     * @param true_elevation_deg True elevation angle in degrees.
+     * @param refraction_factor Factor to scale the refraction effect.
+     */
+    private static double calculate_refraction (double true_elevation_deg, double refraction_factor) {
+        if (refraction_factor == 0.0) {
+            return 0.0;
+        }
+        if (true_elevation_deg > 89.8915 || true_elevation_deg < -5.0015) {
+            return 0.0;
+        }
+
+        double angle_arg = (true_elevation_deg + 10.3 / (true_elevation_deg + 5.11)) * DEG2RAD;
+        return 1.02 / 60.0 / Math.tan (angle_arg) * refraction_factor;
     }
 
     /**
