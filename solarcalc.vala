@@ -535,13 +535,17 @@ public class SolarCalc : Adw.Application {
             double hour_angle_rad = ((i + eqtime_minutes + tst_offset) / 4.0 - 180.0) * DEG2RAD;
             double elevation_sin = (sin_lat * declination_sin + cos_lat * declination_cos * Math.cos (hour_angle_rad)).clamp (-1.0, 1.0);
             double elevation_cos = Math.sqrt (1.0 - elevation_sin * elevation_sin); // non-negative in [-90 deg, +90 deg]
-            double geocentric_parallax_deg = 0.00244 * elevation_cos;
-            double true_elevation_deg = Math.asin (elevation_sin) * RAD2DEG - geocentric_parallax_deg;
-            sun_angles[i] = true_elevation_deg + calculate_refraction (true_elevation_deg, refraction_factor);
+            double geocentric_elevation_deg = Math.asin (elevation_sin) * RAD2DEG;
+            double topocentric_elevation_deg = geocentric_elevation_deg - 0.00244 * elevation_cos; // Geocentric parallax correction
+            sun_angles[i] = topocentric_elevation_deg + calculate_refraction (topocentric_elevation_deg, refraction_factor);
 
             double true_anomaly_rad = mean_anomaly_rad + equation_of_center_deg * DEG2RAD;
-            double distance_au = (1.0 - eccentricity * eccentricity) / (1.0 + eccentricity * Math.cos (true_anomaly_rad));
-            sun_distances[i] = distance_au * 149597870.7; // Convert AU to km
+            // Sun-(Earth+Moon) distance and then correct to Sun-Earth distance
+            double distance_emb_au = (1.0 - eccentricity * eccentricity) / (1.0 + eccentricity * Math.cos (true_anomaly_rad));
+            double moon_mean_elong_deg = 297.8501921 + 12.190749114398 * days_from_epoch - 1.41064e-12 * days_from_epoch_sq + 3.7596e-20 * days_from_epoch_cb;
+            double moon_correction_km = 4671.0 * Math.cos (moon_mean_elong_deg * DEG2RAD);
+            double topocentric_correction_km = 6371.0 * elevation_sin;
+            sun_distances[i] = 149597870.7 * distance_emb_au - topocentric_correction_km + moon_correction_km;
         }
     }
 
@@ -612,7 +616,7 @@ public class SolarCalc : Adw.Application {
             int minutes = (int) ((clicked_time_hours - hours) * 60);
 
             // Update info label
-            string info_text = "Time: %02d:%02d\nElevation: %.2f°\nDistance: %.4E km".printf (
+            string info_text = "Time: %02d:%02d\nElevation: %.2f°\nDistance: %.5E km".printf (
                 hours, minutes, corresponding_angle, sun_distances[time_minutes]
             );
 
