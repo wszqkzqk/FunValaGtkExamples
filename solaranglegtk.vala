@@ -19,15 +19,19 @@ public class SolarAngleApp : Gtk.Application {
     private const int MARGIN_RIGHT = 20;
     private const int MARGIN_TOP = 50;
     private const int MARGIN_BOTTOM = 70;
+    // Default info label
+    private const string DEFAULT_INFO_LABEL = "Click on the chart for details\nElevation: --\nDistance: --";
 
     private Gtk.ApplicationWindow window;
     private Gtk.DrawingArea drawing_area;
     private Gtk.Label click_info_label;
     private DateTime selected_date;
     private double sun_angles[RESOLUTION_PER_MIN];
+    private double sun_distances[RESOLUTION_PER_MIN];
     private double latitude = 0.0;
     private double longitude = 0.0;
     private double timezone_offset_hours = 0.0;
+    private double refraction_factor = 1.0;
     private double clicked_time_hours = 0.0;
     private double corresponding_angle = 0.0;
     private bool has_click_point = false;
@@ -147,12 +151,28 @@ public class SolarAngleApp : Gtk.Application {
             drawing_area.queue_draw ();
         });
 
+        var refraction_label = new Gtk.Label ("Refraction:") {
+            halign = Gtk.Align.START,
+            tooltip_text = "Set to 1.0 for standard atmosphere.\nSet to 0.0 to disable refraction.",
+        };
+        var refraction_spin = new Gtk.SpinButton.with_range (0.0, 2.0, 0.05) {
+            value = refraction_factor,
+            digits = 2,
+        };
+        refraction_spin.value_changed.connect (() => {
+            refraction_factor = refraction_spin.value;
+            update_plot_data ();
+            drawing_area.queue_draw ();
+        });
+
         settings_grid.attach (latitude_label, 0, 0, 1, 1);
         settings_grid.attach (latitude_spin, 1, 0, 1, 1);
         settings_grid.attach (longitude_label, 0, 1, 1, 1);
         settings_grid.attach (longitude_spin, 1, 1, 1, 1);
         settings_grid.attach (timezone_label, 0, 2, 1, 1);
         settings_grid.attach (timezone_spin, 1, 2, 1, 1);
+        settings_grid.attach (refraction_label, 0, 3, 1, 1);
+        settings_grid.attach (refraction_spin, 1, 3, 1, 1);
 
         location_time_group.append (settings_grid);
 
@@ -200,9 +220,10 @@ public class SolarAngleApp : Gtk.Application {
             use_markup = true,
             halign = Gtk.Align.START,
         };
-        // Initial click info label (Use an extra newline for better spacing)
-        click_info_label = new Gtk.Label ("Click on the chart to view data\n") {
+        // Initial click info label
+        click_info_label = new Gtk.Label (DEFAULT_INFO_LABEL) {
             halign = Gtk.Align.START,
+            wrap = true,
         };
         click_info_group.append (click_info_title);
         click_info_group.append (click_info_label);
@@ -235,6 +256,29 @@ public class SolarAngleApp : Gtk.Application {
     }
 
     /**
+     * Calculates atmospheric refraction using Saemundsson's formula.
+     *
+     * The formula R = 1.02 / tan(h + 10.3/(h+5.11)) mathematically fails
+     * when the inner argument exceeds 90 degrees or creates a singularity.
+     * The roots are exactly ~ -5.0015 and ~ 89.8915.
+     * Inside this range, the formula is valid.
+     *
+     * @param true_elevation_deg True elevation angle in degrees.
+     * @param refraction_factor Factor to scale the refraction effect.
+     */
+    private static double calculate_refraction (double true_elevation_deg, double refraction_factor) {
+        if (refraction_factor == 0.0) {
+            return 0.0;
+        }
+        if (true_elevation_deg > 89.8915 || true_elevation_deg < -5.0015) {
+            return 0.0;
+        }
+
+        double angle_arg = (true_elevation_deg + 10.3 / (true_elevation_deg + 5.11)) * DEG2RAD;
+        return 1.02 / 60.0 / Math.tan (angle_arg) * refraction_factor;
+    }
+
+    /**
      * Calculates solar elevation angles for each minute of the day.
      * Based on Meeus's book "Astronomical Algorithms" (1998)
      *
@@ -256,8 +300,9 @@ public class SolarAngleApp : Gtk.Application {
         double obliquity_cos = Math.cos (obliquity_deg * DEG2RAD);
         double ecliptic_c1 = 1.914602 - 1.3188e-7 * base_days_from_epoch - 1.049e-14 * base_days_sq;
         double ecliptic_c2 = 0.019993 - 2.7652e-9 * base_days_from_epoch;
-        const double ecliptic_c3 = 0.000289;
         double tst_offset = 4.0 * longitude_deg - 60.0 * timezone_offset_hrs;
+        double eccentricity = 0.016708634 - 1.15091e-09 * base_days_from_epoch - 9.497e-17 * base_days_sq;
+
         for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
             double days_from_epoch = base_days_from_epoch + (i / 60.0 - timezone_offset_hrs) / 24.0;
             double days_from_epoch_sq = days_from_epoch * days_from_epoch;
@@ -273,10 +318,10 @@ public class SolarAngleApp : Gtk.Application {
                 mean_longitude_deg += 360.0;
             }
             double mean_anomaly_rad = mean_anomaly_deg * DEG2RAD;
-            double ecliptic_longitude_deg = mean_longitude_deg
-                + ecliptic_c1 * Math.sin (mean_anomaly_rad)
+            double equation_of_center_deg = ecliptic_c1 * Math.sin (mean_anomaly_rad)
                 + ecliptic_c2 * Math.sin (2.0 * mean_anomaly_rad)
-                + ecliptic_c3 * Math.sin (3.0 * mean_anomaly_rad);
+                + 0.000289 * Math.sin (3.0 * mean_anomaly_rad);
+            double ecliptic_longitude_deg = mean_longitude_deg + equation_of_center_deg;
             ecliptic_longitude_deg = Math.fmod (ecliptic_longitude_deg, 360.0);
             if (ecliptic_longitude_deg < 0) {
                 ecliptic_longitude_deg += 360.0;
@@ -301,8 +346,17 @@ public class SolarAngleApp : Gtk.Application {
             double hour_angle_rad = ((i + eqtime_minutes + tst_offset) / 4.0 - 180.0) * DEG2RAD;
             double elevation_sin = (sin_lat * declination_sin + cos_lat * declination_cos * Math.cos (hour_angle_rad)).clamp (-1.0, 1.0);
             double elevation_cos = Math.sqrt (1.0 - elevation_sin * elevation_sin); // non-negative in [-90 deg, +90 deg]
-            double geocentric_parallax_deg = 0.00244 * elevation_cos;
-            sun_angles[i] = Math.asin (elevation_sin) * RAD2DEG - geocentric_parallax_deg;
+            double geocentric_elevation_deg = Math.asin (elevation_sin) * RAD2DEG;
+            double topocentric_elevation_deg = geocentric_elevation_deg - 0.00244 * elevation_cos; // Geocentric parallax correction
+            sun_angles[i] = topocentric_elevation_deg + calculate_refraction (topocentric_elevation_deg, refraction_factor);
+
+            double true_anomaly_rad = mean_anomaly_rad + equation_of_center_deg * DEG2RAD;
+            // Sun-(Earth+Moon) distance and then correct to Sun-Earth distance
+            double distance_emb_au = (1.0 - eccentricity * eccentricity) / (1.0 + eccentricity * Math.cos (true_anomaly_rad));
+            double moon_mean_elong_deg = 297.8501921 + 12.190749114398 * days_from_epoch - 1.41064e-12 * days_from_epoch_sq + 3.7596e-20 * days_from_epoch_cb;
+            double moon_correction_km = 4671.0 * Math.cos (moon_mean_elong_deg * DEG2RAD);
+            double topocentric_correction_km = 6371.0 * elevation_sin;
+            sun_distances[i] = 149597870.7 * distance_emb_au - topocentric_correction_km + moon_correction_km;
         }
     }
 
@@ -321,7 +375,7 @@ public class SolarAngleApp : Gtk.Application {
 
         // Clear click point when data updates
         has_click_point = false;
-        click_info_label.label = "Click on chart to view data\n";
+        click_info_label.label = DEFAULT_INFO_LABEL;
     }
 
     /**
@@ -350,8 +404,8 @@ public class SolarAngleApp : Gtk.Application {
             int minutes = (int) ((clicked_time_hours - hours) * 60);
 
             // Update info label
-            string info_text = "Time: %02d:%02d\nSolar Elevation: %.1f°".printf (
-                hours, minutes, corresponding_angle
+            string info_text = "Time: %02d:%02d\nElevation: %.2f°\nDistance: %.5E km".printf (
+                hours, minutes, corresponding_angle, sun_distances[time_minutes]
             );
 
             click_info_label.label = info_text;
@@ -359,7 +413,7 @@ public class SolarAngleApp : Gtk.Application {
         } else {
             // Double click or outside plot area - clear point
             has_click_point = false;
-            click_info_label.label = "Click on the chart to view data\n";
+            click_info_label.label = DEFAULT_INFO_LABEL;
             drawing_area.queue_draw ();
         }
     }
@@ -632,7 +686,7 @@ public class SolarAngleApp : Gtk.Application {
     }
 
     /**
-     * Exports the solar elevation data to a CSV file.
+     * Exports the solar data to a CSV file.
      *
      * @param file The file to export the data to.
      */
@@ -642,7 +696,7 @@ public class SolarAngleApp : Gtk.Application {
             var data_stream = new DataOutputStream (stream);
 
             // Write CSV metadata as comments
-            data_stream.put_string ("# Solar Elevation Data\n");
+            data_stream.put_string ("# Solar Data\n");
             data_stream.put_string ("# Date: %s\n".printf (selected_date.format ("%Y-%m-%d")));
             data_stream.put_string ("# Latitude: %.2f degrees\n".printf (latitude));
             data_stream.put_string ("# Longitude: %.2f degrees\n".printf (longitude));
@@ -650,14 +704,14 @@ public class SolarAngleApp : Gtk.Application {
             data_stream.put_string ("#\n");
 
             // Write CSV header
-            data_stream.put_string ("Time,Solar Elevation (degrees)\n");
+            data_stream.put_string ("Time,Solar Elevation (degrees),Distance (km)\n");
 
             // Write data points
             for (int i = 0; i < RESOLUTION_PER_MIN; i += 1) {
                 int hours = i / 60;
                 int minutes = i % 60;
                 data_stream.put_string (
-                    "%02d:%02d,%.3f\n".printf (hours, minutes, sun_angles[i])
+                    "%02d:%02d,%.3f,%.5E\n".printf (hours, minutes, sun_angles[i], sun_distances[i])
                 );
             }
 
