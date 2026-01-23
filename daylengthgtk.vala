@@ -46,7 +46,7 @@ public class DayLengthApp : Gtk.Application {
      * Creates a new DayLengthApp instance.
      */
     public DayLengthApp () {
-        Object (application_id: "com.github.wszqkzqk.DayLengthGtk");
+        Object (application_id: "io.github.wszqkzqk.DayLengthGtk");
         DateTime now = new DateTime.now_local ();
         selected_year = now.get_year ();
     }

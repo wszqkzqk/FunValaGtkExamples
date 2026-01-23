@@ -91,7 +91,7 @@ public class LunarCalc : Adw.Application {
      * the selected date to the current local date.
      */
     public LunarCalc () {
-        Object (application_id: "com.github.wszqkzqk.LunarCalc");
+        Object (application_id: "io.github.wszqkzqk.LunarCalc");
         selected_date = new DateTime.now_local ();
     }
 

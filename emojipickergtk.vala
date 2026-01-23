@@ -15,7 +15,7 @@ public class EmojiPickerApp : Gtk.Application {
      * Creates a new EmojiPickerApp instance.
      */
     public EmojiPickerApp () {
-        Object (application_id: "com.github.wszqkzqk.EmojiPicker");
+        Object (application_id: "io.github.wszqkzqk.EmojiPicker");
     }
 
     /**

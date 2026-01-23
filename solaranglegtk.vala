@@ -51,7 +51,7 @@ public class SolarAngleApp : Gtk.Application {
      * the selected date to the current local date.
      */
     public SolarAngleApp () {
-        Object (application_id: "com.github.wszqkzqk.SolarAngleGtk");
+        Object (application_id: "io.github.wszqkzqk.SolarAngleGtk");
         selected_date = new DateTime.now_local ();
     }
 

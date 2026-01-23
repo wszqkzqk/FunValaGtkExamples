@@ -90,7 +90,7 @@ public class SolarCalc : Adw.Application {
      * the selected date to the current local date.
      */
     public SolarCalc () {
-        Object (application_id: "com.github.wszqkzqk.SolarCalc");
+        Object (application_id: "io.github.wszqkzqk.SolarCalc");
         selected_date = new DateTime.now_local ();
     }
 
