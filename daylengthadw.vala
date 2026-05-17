@@ -73,11 +73,8 @@ public class DayLengthApp : Adw.Application {
         line_r: 0.3, line_g: 0.7, line_b: 1.0, line_a: 0.7
     };
 
-    /**
-     * Creates a new DayLengthApp instance.
-     */
-    public DayLengthApp () {
-        Object (application_id: "io.github.wszqkzqk.DayLengthAdw");
+    construct {
+        application_id = "io.github.wszqkzqk.DayLengthAdw";
         DateTime now = new DateTime.now_local ();
         selected_year = now.get_year ();
     }

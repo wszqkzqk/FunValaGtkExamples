@@ -44,14 +44,8 @@ public class SolarAngleApp : Gtk.Application {
     private Gtk.SpinButton longitude_spin;
     private Gtk.SpinButton timezone_spin;
 
-    /**
-     * Creates a new SolarAngleApp instance.
-     *
-     * Initializes the application with a unique application ID and sets
-     * the selected date to the current local date.
-     */
-    public SolarAngleApp () {
-        Object (application_id: "io.github.wszqkzqk.SolarAngleGtk");
+    construct {
+        application_id = "io.github.wszqkzqk.SolarAngleGtk";
         selected_date = new DateTime.now_local ();
     }
 

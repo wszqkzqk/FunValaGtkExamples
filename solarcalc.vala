@@ -83,14 +83,8 @@ public class SolarCalc : Adw.Application {
         line_r: 0.3, line_g: 0.7, line_b: 1.0, line_a: 0.7  // Light blue guide lines
     };
 
-    /**
-     * Creates a new SolarCalc instance.
-     *
-     * Initializes the application with a unique application ID and sets
-     * the selected date to the current local date.
-     */
-    public SolarCalc () {
-        Object (application_id: "io.github.wszqkzqk.SolarCalc");
+    construct {
+        application_id = "io.github.wszqkzqk.SolarCalc";
         selected_date = new DateTime.now_local ();
     }
 

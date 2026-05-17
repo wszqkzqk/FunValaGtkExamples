@@ -42,11 +42,8 @@ public class DayLengthApp : Gtk.Application {
     private Gtk.SpinButton year_spin;
     private Gtk.SpinButton horizon_spin;
 
-    /**
-     * Creates a new DayLengthApp instance.
-     */
-    public DayLengthApp () {
-        Object (application_id: "io.github.wszqkzqk.DayLengthGtk");
+    construct {
+        application_id = "io.github.wszqkzqk.DayLengthGtk";
         DateTime now = new DateTime.now_local ();
         selected_year = now.get_year ();
     }

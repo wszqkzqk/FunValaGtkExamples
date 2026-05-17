@@ -11,11 +11,8 @@ public class EmojiPickerApp : Adw.Application {
     private Gtk.Button show_emoji_button;
     private Gtk.EmojiChooser emoji_chooser;
 
-    /**
-     * Creates a new EmojiPickerApp instance.
-     */
-    public EmojiPickerApp () {
-        Object (application_id: "io.github.wszqkzqk.EmojiPicker");
+    construct {
+        application_id = "io.github.wszqkzqk.EmojiPicker";
     }
 
     /**
