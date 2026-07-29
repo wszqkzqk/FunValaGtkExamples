@@ -458,7 +458,7 @@ public class LunarCalc : Adw.Application {
 
     /**
      * Calculates Moon elevation angles and phases for each minute of the day.
-     * Includes parallax correction. No atmospheric refraction.
+     * Includes parallax and atmospheric refraction corrections.
      *
      * @param latitude_rad Latitude in radians.
      * @param longitude_deg Longitude in degrees.
@@ -510,10 +510,10 @@ public class LunarCalc : Adw.Application {
                 + 6.2888 * Math.sin (moon_mean_anomaly_rad)
                 + 1.2740 * Math.sin (2 * mean_elongation_rad - moon_mean_anomaly_rad)
                 + 0.6583 * Math.sin (2 * mean_elongation_rad)
-                + 0.2136 * Math.sin (2 * mean_elongation_rad - sun_mean_anomaly_rad)
+                + 0.2136 * Math.sin (2 * moon_mean_anomaly_rad)
                 - 0.1856 * Math.sin (sun_mean_anomaly_rad)
                 - 0.1143 * Math.sin (2 * moon_argument_of_latitude_rad)
-                - 0.0588 * Math.sin (2 * mean_elongation_rad - 2 * moon_mean_anomaly_rad)
+                + 0.0588 * Math.sin (2 * mean_elongation_rad - 2 * moon_mean_anomaly_rad)
                 + 0.0572 * Math.sin (2 * mean_elongation_rad - sun_mean_anomaly_rad - moon_mean_anomaly_rad)
                 + 0.0533 * Math.sin (2 * mean_elongation_rad + moon_mean_anomaly_rad);
 
