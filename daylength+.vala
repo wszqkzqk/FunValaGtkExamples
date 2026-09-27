@@ -189,7 +189,7 @@ private void calculate_day_length (
  * Asynchronously gets current location and timezone using IP geolocation service.
  */
 private async void get_location_and_time_async (out double latitude_deg, out double longitude_deg, out double timezone_offset_hours) throws IOError {
-    var file = File.new_for_uri ("https://ipapi.co/json/");
+    var file = File.new_for_uri ("https://ipwho.is/");
     var parser = new Json.Parser ();
 
     var cancellable = new Cancellable ();
@@ -209,9 +209,9 @@ private async void get_location_and_time_async (out double latitude_deg, out dou
     }
 
     var root_object = parser.get_root ().get_object ();
-    if (root_object.get_boolean_member_with_default ("error", false)) {
+    if (!root_object.get_boolean_member_with_default ("success", false)) {
         throw new IOError.FAILED ("Location service error: %s",
-            root_object.get_string_member_with_default ("reason", "Unknown error"));
+            root_object.get_string_member_with_default ("message", "Unknown error"));
     }
 
     if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
@@ -224,10 +224,10 @@ private async void get_location_and_time_async (out double latitude_deg, out dou
     double network_tz_offset = 0.0;
     bool has_network_tz = false;
 
-    if (root_object.has_member ("utc_offset")) {
-        var offset_str = root_object.get_string_member ("utc_offset");
-        if (double.try_parse(offset_str, out network_tz_offset)) {
-            network_tz_offset /= 100.0;
+    if (root_object.has_member ("timezone")) {
+        var timezone_obj = root_object.get_object_member ("timezone");
+        if (timezone_obj.has_member ("offset")) {
+            network_tz_offset = timezone_obj.get_int_member ("offset") / 3600.0;
             has_network_tz = true;
         }
     }

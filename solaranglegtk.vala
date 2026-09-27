@@ -752,7 +752,7 @@ public class SolarAngleApp : Gtk.Application {
      * Asynchronously obtains IP-based location information.
      */
     private async void get_location_async () throws IOError {
-        var file = File.new_for_uri ("https://ipapi.co/json/");
+        var file = File.new_for_uri ("https://ipwho.is/");
         var parser = new Json.Parser ();
 
         var cancellable = new Cancellable ();
@@ -774,8 +774,8 @@ public class SolarAngleApp : Gtk.Application {
 
         var root_object = parser.get_root ().get_object ();
 
-        if (root_object.get_boolean_member_with_default ("error", false)) {
-            throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("reason", "Unknown error"));
+        if (!root_object.get_boolean_member_with_default ("success", false)) {
+            throw new IOError.FAILED ("Location service error: %s", root_object.get_string_member_with_default ("message", "Unknown error"));
         }
 
         if (root_object.has_member ("latitude") && root_object.has_member ("longitude")) {
@@ -788,10 +788,12 @@ public class SolarAngleApp : Gtk.Application {
         double network_tz_offset = 0.0;
         bool has_network_tz = false;
 
-        if (root_object.has_member ("utc_offset")) {
-            var offset_str = root_object.get_string_member ("utc_offset");
-            network_tz_offset = double.parse (offset_str) / 100.0;
-            has_network_tz = true;
+        if (root_object.has_member ("timezone")) {
+            var timezone_obj = root_object.get_object_member ("timezone");
+            if (timezone_obj.has_member ("offset")) {
+                network_tz_offset = timezone_obj.get_int_member ("offset") / 3600.0;
+                has_network_tz = true;
+            }
         }
 
         // Get the local timezone
